@@ -12,6 +12,7 @@ A Go library for building Retrieval-Augmented Generation (RAG) applications. Rec
 - **SQLite Persistence** — Persistent storage with `modernc.org/sqlite` (pure Go, no CGO)
 - **HNSW ANN Index** — Approximate nearest neighbor search for 100K+ chunks
 - **RAG Pipeline** — Context assembly, prompt templating, token management
+- **Knowledge Graph** — Entity/relation extraction, graph traversal (BFS/DFS), transitive closure, path finding, common-neighbor inference
 - **Multi-namespace** — Isolated knowledge spaces within a single store
 - **Zero CGO** — Pure Go standard library only for core; SQLite via pure Go driver
 
@@ -91,6 +92,7 @@ recall/
 ├── index/          # Storage index: Memory (brute-force + HNSW), filters
 ├── store/          # High-level store: Memory + SQLite backends
 ├── pipeline/       # RAG pipeline: context assembly, templates, queries
+├── graph/          # Knowledge graph: entities, relations, traversal, inference
 ├── bm25/           # BM25 keyword ranking function
 ├── fuse/           # Score fusion: WeightedFusion, RRFFusion
 ├── query/          # Query engine (planned)
@@ -117,7 +119,8 @@ recall/
 - [x] Phase 5: SQLite persistence (modernc.org/sqlite, pure Go)
 - [x] Phase 6: HNSW ANN index (auto-enabled for 1K+ chunks)
 - [x] Phase 7: RAG pipeline (context assembly, prompt templates, token management)
-- [ ] Phase 8: Structured knowledge graph + inference
+- [x] Phase 8: Knowledge graph (entity/relation extraction, BFS/DFS traversal, transitive closure, path finding, common-neighbor inference)
+- [ ] Phase 9: Graph-based RAG (graph-augmented retrieval, multi-hop reasoning)
 
 ## Testing
 
