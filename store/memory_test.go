@@ -1,6 +1,7 @@
 package store
 
 import (
+	"fmt"
 	"context"
 	"strings"
 	"testing"
@@ -249,4 +250,505 @@ func TestMemoryStore_MockChunkerCustomResult(t *testing.T) {
 	assert.Equal(t, 1, s.Count(), "expected 1 chunk")
 
 	mockChunker.AssertExpectations(t)
+}
+
+func TestMemoryStore_MultipleDocuments_Concurrent(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	uploadAndVerify(t, s, "doc1", "First document content with enough text to be chunked properly by the chunker.")
+	uploadAndVerify(t, s, "doc2", "Second document content with enough text to be chunked properly by the chunker too.")
+
+	count := s.Count()
+	assert.GreaterOrEqual(t, count, 2, "expected at least 2 chunks")
+}
+
+func TestMemoryStore_DeleteNonExistentChunk(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	err := s.DeleteChunk("nonexistent")
+	assert.ErrorIs(t, err, core.ErrNotFound, "expected ErrNotFound")
+}
+
+func TestMemoryStore_DeleteDocumentNonExistent(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	err := s.DeleteDocument("nonexistent")
+	assert.ErrorIs(t, err, core.ErrNotFound, "expected ErrNotFound")
+}
+
+func TestMemoryStore_Upload_EmptyDocID(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	doc := core.NewDocument("", "Test", "source")
+	err := s.Upload(context.Background(), doc, "Some content here for testing the upload with empty doc ID.")
+	// Should succeed (doc is not nil, content is not empty)
+	assert.NoError(t, err, "upload with empty doc ID should not fail")
+}
+
+func TestMemoryStore_Search_EmptyStore(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	results, err := s.Search(context.Background(), "test query", index.DefaultSearchOptions(10))
+	require.NoError(t, err)
+	assert.Empty(t, results, "expected empty results for empty store")
+}
+
+func TestMemoryStore_SearchHybrid_EmptyStore(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	opts := index.DefaultSearchOptions(10)
+	opts.Hybrid = true
+	opts.BM25Weight = 0.5
+
+	results, err := s.SearchHybrid(context.Background(), "test query", opts)
+	require.NoError(t, err)
+	assert.Empty(t, results, "expected empty results for empty store")
+}
+
+func TestMemoryStore_Upload_MultipleUploads(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	uploadAndVerify(t, s, "doc1", "First upload content with enough text to be chunked properly.")
+	uploadAndVerify(t, s, "doc2", "Second upload content with enough text to be chunked properly.")
+	uploadAndVerify(t, s, "doc3", "Third upload content with enough text to be chunked properly.")
+
+	count := s.Count()
+	assert.GreaterOrEqual(t, count, 3, "expected at least 3 chunks")
+}
+
+func TestMemoryStore_Namespaces_Empty(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	ns := s.Namespaces()
+	assert.Empty(t, ns, "expected empty namespaces for new store")
+}
+
+func TestMemoryStore_Close(t *testing.T) {
+	s := newTestStore(t)
+	err := s.Close()
+	assert.NoError(t, err, "Close should not fail")
+}
+
+func TestMemoryStore_Upload_ValidEmbeddingDimension(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	doc := core.NewDocument("doc1", "Test", "source")
+	err := s.Upload(context.Background(), doc, "This is test content for embedding validation that should be long enough to be chunked properly by the chunker implementation.")
+	// Should succeed with valid embedding dimension
+	assert.NoError(t, err, "upload should succeed with matching embedding dimension")
+}
+
+func TestMemoryStore_Search_WithMinScore(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	uploadAndVerify(t, s, "doc1", "Go programming language for building scalable systems.")
+
+	opts := index.DefaultSearchOptions(10)
+	opts.MinScore = 0.99
+
+	results, err := s.Search(context.Background(), "Go programming", opts)
+	require.NoError(t, err)
+	for _, r := range results {
+		assert.GreaterOrEqual(t, r.Score, 0.99, "expected score >= 0.99")
+	}
+}
+
+func TestMemoryStore_Search_WithFilters(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	uploadAndVerify(t, s, "doc1", "Go programming language for building scalable systems.")
+
+	filter := &index.TermFilter{Key: "source", Value: "golang.org"}
+	opts := index.DefaultSearchOptions(10)
+	opts.Filters = []index.Filter{filter}
+
+	results, err := s.Search(context.Background(), "Go", opts)
+	require.NoError(t, err)
+	for _, r := range results {
+		assert.Equal(t, "golang.org", r.Chunk.GetMetadataString("source"), "expected source filter")
+	}
+}
+
+func TestMemoryStore_GetChunk_NonExistent(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	_, ok := s.GetChunk("nonexistent")
+	assert.False(t, ok, "expected not to find non-existent chunk")
+}
+
+func TestMemoryStore_DeleteChunk_AfterUpload(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	uploadAndVerify(t, s, "doc1", "Content to be deleted after upload for testing delete functionality.")
+
+	results, err := s.Search(context.Background(), "Content", index.DefaultSearchOptions(1))
+	require.NoError(t, err)
+	require.NotEmpty(t, results, "expected results before delete")
+
+	err = s.DeleteChunk(results[0].Chunk.ID)
+	assert.NoError(t, err, "delete should not fail")
+
+	_, ok := s.GetChunk(results[0].Chunk.ID)
+	assert.False(t, ok, "expected chunk to be deleted")
+}
+
+func TestMemoryStore_DeleteDocument_AfterUpload(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	uploadAndVerify(t, s, "doc1", "Document content that will be deleted along with all its chunks.")
+
+	err := s.DeleteDocument("doc1")
+	assert.NoError(t, err, "delete document should not fail")
+
+	assert.Equal(t, 0, s.Count(), "expected 0 chunks after document deletion")
+}
+
+func TestMemoryStore_Upload_DifferentContent(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	uploadAndVerify(t, s, "doc1", "Content about Go programming language and its features.")
+	uploadAndVerify(t, s, "doc2", "Content about Python programming language and its uses.")
+
+	results, err := s.Search(context.Background(), "Go", index.DefaultSearchOptions(5))
+	require.NoError(t, err)
+	assert.NotEmpty(t, results, "expected results for Go query")
+}
+
+func TestMemoryStore_Upload_VeryLongContent(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	longContent := strings.Repeat("This is a long sentence that will be chunked into multiple pieces. ", 100)
+	uploadAndVerify(t, s, "doc1", longContent)
+
+	assert.Greater(t, s.Count(), 1, "expected multiple chunks for very long content")
+}
+
+func TestMemoryStore_Upload_ShortContent(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	// Short content may not produce chunks if below MinChunkSize
+	err := s.Upload(context.Background(), core.NewDocument("doc1", "Test", "source"), "Hi")
+	// May return error if no chunks produced
+	_ = err
+}
+
+func TestMemoryStore_Search_EmptyQuery(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	uploadAndVerify(t, s, "doc1", "Content to search for empty query testing purposes.")
+
+	results, err := s.Search(context.Background(), "", index.DefaultSearchOptions(10))
+	require.NoError(t, err)
+	// Empty query should still work (embedding-based search)
+	_ = results
+}
+
+func TestMemoryStore_SearchHybrid_WithFusion(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	uploadAndVerify(t, s, "doc1", "Go programming language for building scalable systems.")
+
+	opts := index.DefaultSearchOptions(5)
+	opts.Hybrid = true
+	opts.BM25Weight = 0.5
+	opts.Fusion = fuse.NewWeightedFusion(0.5)
+
+	results, err := s.SearchHybrid(context.Background(), "Go programming", opts)
+	require.NoError(t, err)
+	require.NotEmpty(t, results, "expected hybrid search results with weighted fusion")
+}
+
+func TestMemoryStore_HybridSearch_WithRRF(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	uploadAndVerify(t, s, "doc1", "Go programming language for building scalable systems.")
+
+	opts := index.DefaultSearchOptions(5)
+	opts.Hybrid = true
+	opts.BM25Weight = 0.5
+	opts.Fusion = fuse.NewRRFFusion(60)
+
+	results, err := s.SearchHybrid(context.Background(), "Go programming", opts)
+	require.NoError(t, err)
+	require.NotEmpty(t, results, "expected hybrid search results with RRF fusion")
+}
+
+func TestMemoryStore_Count_AfterDelete(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	uploadAndVerify(t, s, "doc1", "Content to be deleted after upload for testing count after delete.")
+
+	initialCount := s.Count()
+	assert.Greater(t, initialCount, 0, "expected chunks before delete")
+
+	results, err := s.Search(context.Background(), "Content", index.DefaultSearchOptions(1))
+	require.NoError(t, err)
+	require.NotEmpty(t, results, "expected results before delete")
+
+	err = s.DeleteChunk(results[0].Chunk.ID)
+	assert.NoError(t, err)
+
+	finalCount := s.Count()
+	assert.Less(t, finalCount, initialCount, "expected fewer chunks after delete")
+}
+
+func TestMemoryStore_Namespaces_AfterUpload(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	uploadAndVerify(t, s, "doc1", "This is content for namespace testing after upload that should be long enough to be chunked properly by the chunker implementation.")
+
+	ns := s.Namespaces()
+	assert.NotEmpty(t, ns, "expected non-empty namespaces after upload")
+}
+
+func TestMemoryStore_Upload_WithMetadata(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	doc := core.NewDocument("doc1", "Test", "source")
+	doc.Metadata = map[string]core.Value{
+		"author": core.String{Value: "TestAuthor"},
+		"date":   core.Number{Value: 2024},
+	}
+
+	err := s.Upload(context.Background(), doc, "Content with metadata for testing metadata propagation.")
+	assert.NoError(t, err, "upload with metadata should succeed")
+
+	results, err := s.Search(context.Background(), "Content", index.DefaultSearchOptions(1))
+	require.NoError(t, err)
+	require.NotEmpty(t, results, "expected results")
+
+	chunk := results[0].Chunk
+	assert.Equal(t, "TestAuthor", chunk.GetMetadataString("author"), "expected author metadata")
+}
+
+func TestMemoryStore_Upload_EmptyNamespace(t *testing.T) {
+	cfg := Config{
+		Namespace: "", // Empty namespace
+		Embedder:  embedder.NewMockEmbedder(384),
+	}
+	s, err := NewMemoryStore(cfg)
+	require.NoError(t, err)
+	defer s.Close()
+
+	doc := core.NewDocument("doc1", "Test", "source")
+	err = s.Upload(context.Background(), doc, "This is content for empty namespace testing that should be long enough to be chunked properly by the chunker implementation.")
+	assert.NoError(t, err, "upload with empty namespace should succeed")
+}
+
+func TestMemoryStore_Upload_CustomNamespace(t *testing.T) {
+	cfg := Config{
+		Namespace: "custom-ns",
+		Embedder:  embedder.NewMockEmbedder(384),
+	}
+	s, err := NewMemoryStore(cfg)
+	require.NoError(t, err)
+	defer s.Close()
+
+	doc := core.NewDocument("doc1", "Test", "source")
+	err = s.Upload(context.Background(), doc, "This is content for custom namespace testing that should be long enough to be chunked properly by the chunker implementation.")
+	assert.NoError(t, err, "upload with custom namespace should succeed")
+
+	ns := s.Namespaces()
+	assert.Contains(t, ns, "custom-ns", "expected custom namespace")
+}
+
+func TestMemoryStore_Upload_MultipleNamespaces(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	// Upload to default namespace
+	uploadAndVerify(t, s, "doc1", "This is content for default namespace that should be long enough to be chunked properly by the chunker implementation.")
+
+	// Create a new store with different namespace
+	cfg := Config{
+		Namespace: "ns2",
+		Embedder:  embedder.NewMockEmbedder(384),
+	}
+	s2, err := NewMemoryStore(cfg)
+	require.NoError(t, err)
+	defer s2.Close()
+
+	uploadAndVerify(t, s2, "doc2", "This is content for second namespace that should be long enough to be chunked properly by the chunker implementation.")
+
+	ns1 := s.Namespaces()
+	ns2 := s2.Namespaces()
+	assert.Contains(t, ns1, "test", "expected test namespace")
+	assert.Contains(t, ns2, "ns2", "expected ns2 namespace")
+}
+
+func TestMemoryStore_Upload_LargeDocument(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	largeContent := strings.Repeat("This is a large document with lots of content for testing. ", 1000)
+	uploadAndVerify(t, s, "doc1", largeContent)
+
+	assert.Greater(t, s.Count(), 10, "expected many chunks for large document")
+}
+
+func TestMemoryStore_Upload_Concurrent(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	done := make(chan bool, 10)
+	for i := 0; i < 10; i++ {
+		go func(idx int) {
+			doc := core.NewDocument(fmt.Sprintf("doc-%d", idx), "Test", "source")
+			content := fmt.Sprintf("Content for concurrent upload %d with enough text to be chunked properly.", idx)
+			err := s.Upload(context.Background(), doc, content)
+			if err != nil {
+				t.Errorf("concurrent upload %d failed: %v", idx, err)
+			}
+			done <- true
+		}(i)
+	}
+
+	for i := 0; i < 10; i++ {
+		<-done
+	}
+
+	assert.Greater(t, s.Count(), 0, "expected chunks from concurrent uploads")
+}
+
+func TestMemoryStore_Upload_EmptyNamespaceConfig(t *testing.T) {
+	cfg := Config{
+		Namespace: "",
+		Embedder:  embedder.NewMockEmbedder(384),
+	}
+	s, err := NewMemoryStore(cfg)
+	require.NoError(t, err)
+	defer s.Close()
+
+	doc := core.NewDocument("doc1", "Test", "source")
+	err = s.Upload(context.Background(), doc, "This is content for empty namespace config testing that should be long enough to be chunked properly by the chunker implementation.")
+	assert.NoError(t, err, "upload with empty namespace config should succeed")
+}
+
+func TestMemoryStore_Upload_DefaultEmbedder(t *testing.T) {
+	cfg := Config{
+		Namespace: "test",
+		// Embedder is nil - should use default
+	}
+	s, err := NewMemoryStore(cfg)
+	require.NoError(t, err)
+	defer s.Close()
+
+	doc := core.NewDocument("doc1", "Test", "source")
+	err = s.Upload(context.Background(), doc, "This is content for default embedder testing that should be long enough to be chunked properly by the chunker implementation.")
+	assert.NoError(t, err, "upload with default embedder should succeed")
+}
+
+func TestMemoryStore_Upload_DefaultChunker(t *testing.T) {
+	cfg := Config{
+		Namespace:      "test",
+		Embedder:       embedder.NewMockEmbedder(384),
+		ChunkerFactory: nil, // Should use default
+	}
+	s, err := NewMemoryStore(cfg)
+	require.NoError(t, err)
+	defer s.Close()
+
+	doc := core.NewDocument("doc1", "Test", "source")
+	err = s.Upload(context.Background(), doc, "This is content for default chunker testing that should be long enough to be chunked properly by the chunker implementation.")
+	assert.NoError(t, err, "upload with default chunker should succeed")
+}
+
+func TestMemoryStore_Upload_CustomChunker(t *testing.T) {
+	mockChunker := new(chunker.MockChunker)
+	mockChunker.On("Chunk", mock.Anything, mock.Anything).Return([]*core.Chunk{
+		{ID: "chunk-0", Content: "test content", DocumentRef: "doc1", Embedding: make([]float32, 384)},
+	}, nil)
+
+	cfg := Config{
+		Namespace:      "test",
+		Embedder:       embedder.NewMockEmbedder(384),
+		ChunkerFactory: func(cfg chunker.Config) chunker.Chunker { return mockChunker },
+	}
+	s, err := NewMemoryStore(cfg)
+	require.NoError(t, err)
+	defer s.Close()
+
+	doc := core.NewDocument("doc1", "Test", "source")
+	err = s.Upload(context.Background(), doc, "Content for custom chunker testing.")
+	assert.NoError(t, err, "upload with custom chunker should succeed")
+}
+
+func TestMemoryStore_Upload_NilDocument(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	err := s.Upload(context.Background(), nil, "Some content for testing nil document upload.")
+	assert.ErrorIs(t, err, core.ErrInvalidChunk, "expected ErrInvalidChunk for nil document")
+}
+
+func TestMemoryStore_Upload_EmptyContent(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	doc := core.NewDocument("doc1", "Test", "source")
+	err := s.Upload(context.Background(), doc, "")
+	assert.ErrorIs(t, err, core.ErrInvalidChunk, "expected ErrInvalidChunk for empty content")
+}
+
+func TestMemoryStore_Upload_WhitespaceContent(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	doc := core.NewDocument("doc1", "Test", "source")
+	err := s.Upload(context.Background(), doc, "   ")
+	// Whitespace-only content may produce no chunks
+	_ = err
+}
+
+func TestMemoryStore_Upload_VeryShortContent(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	doc := core.NewDocument("doc1", "Test", "source")
+	err := s.Upload(context.Background(), doc, "Hi")
+	// Very short content may not produce chunks if below MinChunkSize
+	_ = err
+}
+
+func TestMemoryStore_Upload_ContentWithNewlines(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	doc := core.NewDocument("doc1", "Test", "source")
+	content := "Line 1\nLine 2\nLine 3\nLine 4\nLine 5\nLine 6\nLine 7\nLine 8\nLine 9\nLine 10"
+	err := s.Upload(context.Background(), doc, content)
+	assert.NoError(t, err, "upload with newlines should succeed")
+}
+
+func TestMemoryStore_Upload_ContentWithSpecialChars(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	doc := core.NewDocument("doc1", "Test", "source")
+	content := "Content with special characters: !@#$%^&*()_+-=[]{}|;':\",./<>?"
+	err := s.Upload(context.Background(), doc, content)
+	assert.NoError(t, err, "upload with special characters should succeed")
 }

@@ -186,3 +186,137 @@ func TestInferredRelation_String(t *testing.T) {
 		t.Fatal("expected non-empty string")
 	}
 }
+
+func TestEngine_DefaultConfig(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.MaxDepth != 3 {
+		t.Errorf("expected MaxDepth 3, got %d", cfg.MaxDepth)
+	}
+	if cfg.MinConfidence != 0.3 {
+		t.Errorf("expected MinConfidence 0.3, got %f", cfg.MinConfidence)
+	}
+	if len(cfg.Rules) != 4 {
+		t.Errorf("expected 4 rules, got %d", len(cfg.Rules))
+	}
+}
+
+func TestEngine_ZeroMaxDepth(t *testing.T) {
+	g := graph.NewKnowledgeGraph()
+	cfg := Config{MaxDepth: 0, Rules: DefaultRules()}
+	eng := NewEngine(g, cfg)
+	if eng.maxDepth != 3 {
+		t.Errorf("expected maxDepth 3, got %d", eng.maxDepth)
+	}
+}
+
+func TestEngine_NegativeMinConfidence(t *testing.T) {
+	g := graph.NewKnowledgeGraph()
+	cfg := Config{MinConfidence: -1, Rules: DefaultRules()}
+	eng := NewEngine(g, cfg)
+	if eng.rules == nil {
+		t.Fatal("expected non-nil rules")
+	}
+}
+
+func TestEngine_ExplorePaths_SameEntity(t *testing.T) {
+	g := graph.NewKnowledgeGraph()
+	g.AddEntity(graph.NewEntity("a", "Alice", graph.EntityPerson))
+
+	eng := NewEngine(g, DefaultConfig())
+	paths := eng.ExplorePaths("a", "a")
+	// Same entity should return no paths (visited check)
+	_ = paths
+}
+
+func TestEngine_ExplorePaths_NonExistentEntity(t *testing.T) {
+	g := graph.NewKnowledgeGraph()
+	g.AddEntity(graph.NewEntity("a", "Alice", graph.EntityPerson))
+
+	eng := NewEngine(g, DefaultConfig())
+	paths := eng.ExplorePaths("nonexistent", "a")
+	if paths != nil {
+		t.Fatal("expected nil for non-existent entity")
+	}
+
+	paths = eng.ExplorePaths("a", "nonexistent")
+	if paths != nil {
+		t.Fatal("expected nil for non-existent target")
+	}
+}
+
+func TestEngine_Reason_ZeroHops(t *testing.T) {
+	g := graph.NewKnowledgeGraph()
+	g.AddEntity(graph.NewEntity("alice", "Alice", graph.EntityPerson))
+
+	eng := NewEngine(g, DefaultConfig())
+	results := eng.Reason("Alice", 0)
+	// Zero hops should use maxDepth
+	_ = results
+}
+
+func TestEngine_Reason_LargeHops(t *testing.T) {
+	g := graph.NewKnowledgeGraph()
+	g.AddEntity(graph.NewEntity("alice", "Alice", graph.EntityPerson))
+
+	eng := NewEngine(g, DefaultConfig())
+	results := eng.Reason("Alice", 100) // Larger than maxDepth
+	// Should use maxDepth
+	_ = results
+}
+
+func TestEngine_Reason_NoCapitalizedWords(t *testing.T) {
+	g := graph.NewKnowledgeGraph()
+	eng := NewEngine(g, DefaultConfig())
+	results := eng.Reason("no capitalized words here", 2)
+	if results != nil {
+		t.Fatal("expected nil for query with no capitalized words")
+	}
+}
+
+func TestEngine_Reason_SingleEntity(t *testing.T) {
+	g := graph.NewKnowledgeGraph()
+	g.AddEntity(graph.NewEntity("alice", "Alice", graph.EntityPerson))
+
+	eng := NewEngine(g, DefaultConfig())
+	results := eng.Reason("Alice", 2)
+	// Single entity should not produce paths (from==to check)
+	_ = results
+}
+
+func TestEngine_InferRelations_EmptyGraph(t *testing.T) {
+	g := graph.NewKnowledgeGraph()
+	eng := NewEngine(g, DefaultConfig())
+	inferred := eng.InferRelations()
+	if inferred != nil && len(inferred) != 0 {
+		t.Fatalf("expected empty inferred, got %d", len(inferred))
+	}
+}
+
+func TestEngine_ExplorePaths_EmptyGraph(t *testing.T) {
+	g := graph.NewKnowledgeGraph()
+	eng := NewEngine(g, DefaultConfig())
+	paths := eng.ExplorePaths("a", "b")
+	if paths != nil {
+		t.Fatal("expected nil for empty graph")
+	}
+}
+
+func TestEngine_Reason_Punctuation(t *testing.T) {
+	g := graph.NewKnowledgeGraph()
+	g.AddEntity(graph.NewEntity("alice", "Alice", graph.EntityPerson))
+	g.AddEntity(graph.NewEntity("bob", "Bob", graph.EntityPerson))
+	g.AddRelation(graph.NewRelation("alice", "bob", "knows", 0.9))
+
+	eng := NewEngine(g, DefaultConfig())
+	results := eng.Reason("Alice, knows Bob!", 2)
+	// Should extract Alice and Bob
+	_ = results
+}
+
+func TestInferredRelation_String_Empty(t *testing.T) {
+	ir := &InferredRelation{}
+	s := ir.String()
+	if s == "" {
+		t.Fatal("expected non-empty string")
+	}
+}

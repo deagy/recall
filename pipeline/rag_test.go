@@ -255,3 +255,282 @@ func (s *mockStore) Namespaces() []string {
 func (s *mockStore) Close() error {
 	return nil
 }
+
+func TestTemplate_RenderSystem(t *testing.T) {
+	tmpl := NewTemplate("System: {{.SystemVar}}", "User: {{.UserVar}}")
+
+	vars := map[string]interface{}{
+		"SystemVar": "You are helpful",
+		"UserVar":   "Answer the question",
+	}
+
+	result := tmpl.RenderSystem(vars)
+	if !strings.Contains(result, "You are helpful") {
+		t.Fatal("expected system var substitution")
+	}
+	if strings.Contains(result, "{{.UserVar}}") {
+		t.Fatal("user var should not be in system render")
+	}
+}
+
+func TestTemplate_RenderUser(t *testing.T) {
+	tmpl := NewTemplate("System: {{.SystemVar}}", "User: {{.UserVar}}")
+
+	vars := map[string]interface{}{
+		"SystemVar": "You are helpful",
+		"UserVar":   "Answer the question",
+	}
+
+	result := tmpl.RenderUser(vars)
+	if !strings.Contains(result, "Answer the question") {
+		t.Fatal("expected user var substitution")
+	}
+	if strings.Contains(result, "{{.SystemVar}}") {
+		t.Fatal("system var should not be in user render")
+	}
+}
+
+func TestTemplate_Render_NoVariables(t *testing.T) {
+	tmpl := NewTemplate("Simple system", "Simple user")
+
+	vars := map[string]interface{}{}
+
+	result := tmpl.Render(vars)
+	if !strings.Contains(result, "Simple system") {
+		t.Fatal("expected system text")
+	}
+	if !strings.Contains(result, "Simple user") {
+		t.Fatal("expected user text")
+	}
+}
+
+func TestTemplate_Render_EmptyVars(t *testing.T) {
+	tmpl := NewTemplate("System: {{.Missing}}", "User: {{.Missing}}")
+
+	vars := map[string]interface{}{}
+
+	result := tmpl.Render(vars)
+	// Missing variables should remain as placeholders
+	if !strings.Contains(result, "{{.Missing}}") {
+		t.Fatal("expected missing variable to remain as placeholder")
+	}
+}
+
+func TestTemplate_RenderSpecialChars(t *testing.T) {
+	tmpl := NewTemplate("System: {{.Val}}", "User: {{.Val}}")
+
+	vars := map[string]interface{}{
+		"Val": "Hello <world> & 'friends'",
+	}
+
+	result := tmpl.Render(vars)
+	if !strings.Contains(result, "Hello <world> & 'friends'") {
+		t.Fatal("expected special characters to be preserved")
+	}
+}
+
+func TestRAGPipeline_NullTemplate(t *testing.T) {
+	s := newMockStore(t)
+
+	p := NewRAGPipeline(s, nil)
+	if p.template == nil {
+		t.Fatal("expected default template")
+	}
+
+	resp, err := p.Query(context.Background(), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Answer == "" {
+		t.Fatal("expected non-empty answer")
+	}
+}
+
+func TestRAGPipeline_QueryHybrid(t *testing.T) {
+	s := newMockStore(t)
+
+	p := NewRAGPipeline(s, DefaultTemplate()).WithTopK(5)
+
+	resp, err := p.QueryHybrid(context.Background(), "test question")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if resp.Context == "" {
+		t.Fatal("expected non-empty context")
+	}
+	if resp.Answer == "" {
+		t.Fatal("expected non-empty answer")
+	}
+	if len(resp.Sources) == 0 {
+		t.Fatal("expected sources")
+	}
+}
+
+func TestRAGPipeline_WithTopK(t *testing.T) {
+	s := newMockStore(t)
+	p := NewRAGPipeline(s, DefaultTemplate())
+	p = p.WithTopK(0) // Should not change
+	if p.topK != 10 {
+		t.Fatalf("expected topK=10, got %d", p.topK)
+	}
+
+	p = p.WithTopK(-1) // Should not change
+	if p.topK != 10 {
+		t.Fatalf("expected topK=10, got %d", p.topK)
+	}
+
+	p = p.WithTopK(15)
+	if p.topK != 15 {
+		t.Fatalf("expected topK=15, got %d", p.topK)
+	}
+}
+
+func TestRAGPipeline_WithMinScore(t *testing.T) {
+	s := newMockStore(t)
+	p := NewRAGPipeline(s, DefaultTemplate())
+	p = p.WithMinScore(-1) // Should not change
+	if p.minScore != 0 {
+		t.Fatalf("expected minScore=0, got %f", p.minScore)
+	}
+
+	p = p.WithMinScore(0.5)
+	if p.minScore != 0.5 {
+		t.Fatalf("expected minScore=0.5, got %f", p.minScore)
+	}
+}
+
+func TestRAGPipeline_WithMaxTokens(t *testing.T) {
+	s := newMockStore(t)
+	p := NewRAGPipeline(s, DefaultTemplate())
+	p = p.WithMaxTokens(0) // Should not change
+	if p.maxContextTokens != 4096 {
+		t.Fatalf("expected maxContextTokens=4096, got %d", p.maxContextTokens)
+	}
+
+	p = p.WithMaxTokens(-1) // Should not change
+	if p.maxContextTokens != 4096 {
+		t.Fatalf("expected maxContextTokens=4096, got %d", p.maxContextTokens)
+	}
+
+	p = p.WithMaxTokens(1024)
+	if p.maxContextTokens != 1024 {
+		t.Fatalf("expected maxContextTokens=1024, got %d", p.maxContextTokens)
+	}
+}
+
+func TestContextWindow_AddChunk_ZeroMaxTokens(t *testing.T) {
+	cw := NewContextWindow(0)
+	if cw.MaxTokens != 4096 {
+		t.Fatalf("expected MaxTokens=4096, got %d", cw.MaxTokens)
+	}
+}
+
+func TestContextWindow_AddChunk_NegativeMaxTokens(t *testing.T) {
+	cw := NewContextWindow(-100)
+	if cw.MaxTokens != 4096 {
+		t.Fatalf("expected MaxTokens=4096, got %d", cw.MaxTokens)
+	}
+}
+
+func TestContextWindow_AddChunk_EmptyContent(t *testing.T) {
+	cw := NewContextWindow(100)
+	chunk := core.Chunk{ID: "c1", Content: ""}
+	if !cw.AddChunk(chunk) {
+		t.Fatal("expected empty content chunk to fit")
+	}
+	if cw.Tokens() != 0 {
+		t.Fatalf("expected 0 tokens, got %d", cw.Tokens())
+	}
+}
+
+func TestContextWindow_String_Empty(t *testing.T) {
+	cw := NewContextWindow(100)
+	s := cw.String()
+	if s != "" {
+		t.Errorf("expected empty string, got %q", s)
+	}
+}
+
+func TestContextWindow_Len(t *testing.T) {
+	cw := NewContextWindow(1000)
+	if cw.Len() != 0 {
+		t.Fatalf("expected 0, got %d", cw.Len())
+	}
+
+	cw.AddChunk(core.Chunk{ID: "c1", Content: "hello"})
+	if cw.Len() != 1 {
+		t.Fatalf("expected 1, got %d", cw.Len())
+	}
+
+	cw.AddChunk(core.Chunk{ID: "c2", Content: "world"})
+	if cw.Len() != 2 {
+		t.Fatalf("expected 2, got %d", cw.Len())
+	}
+}
+
+func TestContextWindow_EstimateTokens(t *testing.T) {
+	cw := NewContextWindow(100)
+
+	if cw.estimateTokens("") != 0 {
+		t.Error("expected 0 tokens for empty string")
+	}
+
+	// Rough estimate: chars / 4
+	longStr := strings.Repeat("word ", 100)
+	tokens := cw.estimateTokens(longStr)
+	if tokens <= 0 {
+		t.Error("expected positive tokens for non-empty string")
+	}
+}
+
+func TestContextWindow_String_MultipleChunks(t *testing.T) {
+	cw := NewContextWindow(10000)
+	cw.AddChunk(core.Chunk{ID: "c1", Content: "First"})
+	cw.AddChunk(core.Chunk{ID: "c2", Content: "Second"})
+	cw.AddChunk(core.Chunk{ID: "c3", Content: "Third"})
+
+	s := cw.String()
+	if !strings.Contains(s, "[Chunk 1]") {
+		t.Error("expected [Chunk 1]")
+	}
+	if !strings.Contains(s, "[Chunk 2]") {
+		t.Error("expected [Chunk 2]")
+	}
+	if !strings.Contains(s, "[Chunk 3]") {
+		t.Error("expected [Chunk 3]")
+	}
+	if !strings.Contains(s, "First") {
+		t.Error("expected First")
+	}
+	if !strings.Contains(s, "Second") {
+		t.Error("expected Second")
+	}
+	if !strings.Contains(s, "Third") {
+		t.Error("expected Third")
+	}
+	if !strings.Contains(s, "\n\n---\n\n") {
+		t.Error("expected separator between chunks")
+	}
+}
+
+func TestRAGResponse_Struct(t *testing.T) {
+	resp := &RAGResponse{
+		Answer:  "test answer",
+		Context: "test context",
+		Tokens:  100,
+	}
+
+	if resp.Answer != "test answer" {
+		t.Errorf("expected 'test answer', got %q", resp.Answer)
+	}
+	if resp.Context != "test context" {
+		t.Errorf("expected 'test context', got %q", resp.Context)
+	}
+	if resp.Tokens != 100 {
+		t.Errorf("expected 100, got %d", resp.Tokens)
+	}
+	if resp.Sources != nil {
+		t.Error("expected nil sources")
+	}
+}

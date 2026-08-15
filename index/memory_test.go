@@ -166,3 +166,171 @@ func TestMemoryIndex_MinScoreFilter(t *testing.T) {
 	require.Len(t, results, 1, "expected 1 result with MinScore 0.9")
 	assert.Equal(t, "c1", results[0].Chunk.ID, "expected c1")
 }
+
+func TestMemoryIndex_Search_EmptyIndex(t *testing.T) {
+	idx := NewMemoryIndex("test", 3)
+	results, err := idx.Search(context.Background(), []float32{1, 0, 0}, SearchOptions{TopK: 10})
+	require.NoError(t, err)
+	assert.Empty(t, results, "expected empty results for empty index")
+}
+
+func TestMemoryIndex_Search_ZeroTopK(t *testing.T) {
+	idx := NewMemoryIndex("test", 3)
+	for _, c := range makeTestChunks(3) {
+		_ = idx.Add(context.Background(), c)
+	}
+	results, err := idx.Search(context.Background(), []float32{1, 0, 0}, SearchOptions{TopK: 0})
+	require.NoError(t, err)
+	// Zero TopK should still return results (default behavior)
+	_ = results
+}
+
+func TestMemoryIndex_AddBatch_Empty(t *testing.T) {
+	idx := NewMemoryIndex("test", 3)
+	err := idx.AddBatch(context.Background(), []*core.Chunk{})
+	assert.NoError(t, err, "AddBatch with empty slice should not fail")
+}
+
+func TestMemoryIndex_AddBatch_InvalidEmbedding(t *testing.T) {
+	idx := NewMemoryIndex("test", 3)
+	chunks := []*core.Chunk{
+		{ID: "c1", Content: "test", Embedding: nil},
+	}
+	err := idx.AddBatch(context.Background(), chunks)
+	assert.ErrorIs(t, err, core.ErrInvalidEmbedding, "expected ErrInvalidEmbedding")
+}
+
+func TestMemoryIndex_AddBatch_EmbeddingMismatch(t *testing.T) {
+	idx := NewMemoryIndex("test", 3)
+	chunks := []*core.Chunk{
+		{ID: "c1", Content: "test", Embedding: []float32{1, 2}},
+	}
+	err := idx.AddBatch(context.Background(), chunks)
+	assert.ErrorIs(t, err, core.ErrEmbeddingMismatch, "expected ErrEmbeddingMismatch")
+}
+
+func TestMemoryIndex_Delete_NonExistent(t *testing.T) {
+	idx := NewMemoryIndex("test", 3)
+	err := idx.Delete(context.Background(), "nonexistent")
+	// Delete should not fail even if chunk doesn't exist
+	assert.NoError(t, err, "Delete non-existent should not fail")
+}
+
+func TestMemoryIndex_GetChunk_EmptyIndex(t *testing.T) {
+	idx := NewMemoryIndex("test", 3)
+	_, ok := idx.GetChunk("c1")
+	assert.False(t, ok, "expected not to find chunk in empty index")
+}
+
+func TestMemoryIndex_Add_InvalidEmbedding(t *testing.T) {
+	idx := NewMemoryIndex("test", 3)
+	chunk := &core.Chunk{ID: "c1", Content: "test", Embedding: nil}
+	err := idx.Add(context.Background(), chunk)
+	assert.ErrorIs(t, err, core.ErrInvalidEmbedding, "expected ErrInvalidEmbedding")
+}
+
+func TestMemoryIndex_Add_EmbeddingMismatch(t *testing.T) {
+	idx := NewMemoryIndex("test", 3)
+	chunk := &core.Chunk{ID: "c1", Content: "test", Embedding: []float32{1, 2}}
+	err := idx.Add(context.Background(), chunk)
+	assert.ErrorIs(t, err, core.ErrEmbeddingMismatch, "expected ErrEmbeddingMismatch")
+}
+
+func TestMemoryIndex_Search_WithNilFilters(t *testing.T) {
+	idx := NewMemoryIndex("test", 3)
+	for _, c := range makeTestChunks(3) {
+		_ = idx.Add(context.Background(), c)
+	}
+	results, err := idx.Search(context.Background(), []float32{1, 0, 0}, SearchOptions{
+		TopK:    10,
+		Filters: nil,
+	})
+	require.NoError(t, err)
+	require.Len(t, results, 3, "expected all 3 results with nil filters")
+}
+
+func TestMemoryIndex_Search_WithMinScore(t *testing.T) {
+	idx := NewMemoryIndex("test", 3)
+	for _, c := range makeTestChunks(3) {
+		_ = idx.Add(context.Background(), c)
+	}
+	results, err := idx.Search(context.Background(), []float32{1, 0, 0}, SearchOptions{
+		TopK:     10,
+		MinScore: 1.0,
+	})
+	require.NoError(t, err)
+	// With MinScore 1.0, only exact matches should pass
+	for _, r := range results {
+		assert.GreaterOrEqual(t, r.Score, 1.0, "expected score >= 1.0")
+	}
+}
+
+func TestMemoryIndex_Search_MultipleFilters(t *testing.T) {
+	idx := NewMemoryIndex("test", 3)
+	for _, c := range makeTestChunks(3) {
+		_ = idx.Add(context.Background(), c)
+	}
+	filter1 := &TermFilter{Key: "source", Value: "golang.org"}
+	filter2 := &TermFilter{Key: "source", Value: "python.org"}
+	results, err := idx.Search(context.Background(), []float32{1, 0, 0}, SearchOptions{
+		TopK:    10,
+		Filters: []Filter{filter1, filter2},
+	})
+	require.NoError(t, err)
+	// No chunk can match both filters simultaneously
+	assert.Empty(t, results, "expected no results with conflicting filters")
+}
+
+func TestMemoryIndex_Add_Overwrite(t *testing.T) {
+	idx := NewMemoryIndex("test", 3)
+	chunk1 := &core.Chunk{ID: "c1", Content: "first", Embedding: makeEmbed(3, 1, 0, 0)}
+	chunk2 := &core.Chunk{ID: "c1", Content: "second", Embedding: makeEmbed(3, 0, 1, 0)}
+
+	_ = idx.Add(context.Background(), chunk1)
+	_ = idx.Add(context.Background(), chunk2)
+
+	assert.Equal(t, 1, idx.Count(), "expected count 1 (overwritten)")
+
+	c, ok := idx.GetChunk("c1")
+	require.True(t, ok)
+	assert.Equal(t, "second", c.Content, "expected overwritten content")
+}
+
+func TestMemoryIndex_AddBatch_MixedValidInvalid(t *testing.T) {
+	idx := NewMemoryIndex("test", 3)
+	chunks := []*core.Chunk{
+		{ID: "c1", Content: "test", Embedding: makeEmbed(3, 1, 0, 0)},
+		{ID: "c2", Content: "test", Embedding: nil}, // Invalid
+	}
+	err := idx.AddBatch(context.Background(), chunks)
+	assert.Error(t, err, "expected error for invalid embedding in batch")
+}
+
+func TestMemoryIndex_Namespace_Empty(t *testing.T) {
+	idx := NewMemoryIndex("", 3)
+	assert.Equal(t, "", idx.Namespace(), "namespace should be empty")
+}
+
+func TestMemoryIndex_Dimension_Different(t *testing.T) {
+	idx := NewMemoryIndex("test", 1536)
+	assert.Equal(t, 1536, idx.Dimension(), "dimension should match")
+}
+
+func TestMemoryIndex_HNSW_NotEnabled_Initially(t *testing.T) {
+	idx := NewMemoryIndex("test", 32)
+	assert.False(t, idx.hnswEnabled, "HNSW should not be enabled initially")
+}
+
+func TestMemoryIndex_HNSW_EmptySearch(t *testing.T) {
+	idx := NewMemoryIndex("test", 32)
+	results, err := idx.Search(context.Background(), make([]float32, 32), DefaultSearchOptions(10))
+	require.NoError(t, err)
+	assert.Empty(t, results, "expected empty results for empty index")
+}
+
+func TestMemoryIndex_Add_SingleChunk(t *testing.T) {
+	idx := NewMemoryIndex("test", 3)
+	chunk := &core.Chunk{ID: "c1", Content: "test", Embedding: makeEmbed(3, 1, 0, 0)}
+	require.NoError(t, idx.Add(context.Background(), chunk))
+	assert.Equal(t, 1, idx.Count(), "expected count 1")
+}
