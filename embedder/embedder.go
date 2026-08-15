@@ -66,7 +66,7 @@ func (m *MockEmbedder) Dimension() int {
 	return m.dim
 }
 
-// normalize normalizes a vector to unit length.
+// normalize normalizes a vector to unit length (L2 norm = 1).
 func normalize(v []float32) {
 	var sum float32
 	for _, x := range v {
@@ -75,11 +75,7 @@ func normalize(v []float32) {
 	if sum == 0 {
 		return
 	}
-	norm := float32(0)
-	for _, x := range v {
-		norm += x * x
-	}
-	norm = float32(1.0 / float64(norm))
+	norm := float32(1.0 / sqrt(float64(sum)))
 	for i := range v {
 		v[i] *= norm
 	}

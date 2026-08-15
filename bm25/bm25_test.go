@@ -148,3 +148,41 @@ func TestBM25_LengthNormalization(t *testing.T) {
 		t.Errorf("expected 'short' first (length norm), got %s", results[0].DocID)
 	}
 }
+
+func BenchmarkBM25_AddDocument(b *testing.B) {
+	bm := New(DefaultConfig())
+	doc := "the quick brown fox jumps over the lazy dog and runs through the forest"
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		bm.AddDocument("doc", doc)
+	}
+}
+
+func BenchmarkBM25_Search(b *testing.B) {
+	bm := New(DefaultConfig())
+	docs := make([]string, 1000)
+	for i := range docs {
+		docs[i] = "the quick brown fox jumps over the lazy dog"
+		bm.AddDocument(string(rune('a'+i%26)), docs[i])
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		bm.Search("quick fox")
+	}
+}
+
+func BenchmarkBM25_SearchLargeCorpus(b *testing.B) {
+	bm := New(DefaultConfig())
+	docs := make([]string, 10000)
+	for i := range docs {
+		docs[i] = "the quick brown fox jumps over the lazy dog"
+		bm.AddDocument(string(rune('a'+i%26)), docs[i])
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		bm.Search("quick fox lazy")
+	}
+}

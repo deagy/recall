@@ -18,12 +18,12 @@
 
 ### 1. Embedder Tests (`embedder/`)
 **Priority:** Low
-**Status:** No tests exist; only interface + mock implementation.
+**Status:** ✅ Complete — 15 tests added covering MockEmbedder dimension validation, embedding consistency, normalization, batch processing, cosine similarity, and sqrt utility.
 **Action:** Add unit tests for MockEmbedder (dimension validation, embedding generation consistency).
 
 ### 2. Pluggable NER + Relation Extraction (`graph/`)
 **Priority:** High
-**Status:** Current extraction uses capitalized-word heuristics only.
+**Status:** ✅ Complete — `NERExtractor` interface defined, `PatternRelationExtractor` with 8 default patterns (works_at, located_in, founded_by, part_of, related_to, taught_by, parent_of, ceo_of), pluggable for custom NER models.
 **Action:**
 - Define `NERExtractor` interface with `Extract(text string) ([]*Entity, error)`
 - Add pattern-based relation extractor (e.g., "X works at Y", "X is CEO of Y")
@@ -31,22 +31,22 @@
 
 ### 3. SQLite Graph Persistence (`store/`)
 **Priority:** Medium
-**Status:** GraphStore is memory-only.
+**Status:** ✅ Complete — `SQLiteGraphStore` persists entities and relations to SQLite with `GraphPersistence` interface, `LoadFromDB()`, `Clear()`, and full round-trip persistence.
 **Action:** Add `SQLiteGraphStore` that persists entities and relations to SQLite tables.
 
 ### 4. Example Package (`example/`)
 **Priority:** Medium
-**Status:** Referenced in README architecture diagram but doesn't exist.
+**Status:** ✅ Complete — `example/main.go` demonstrates upload+search, hybrid search, knowledge graph, and graph-based RAG workflows.
 **Action:** Create `example/` with usage examples for common patterns (upload, search, hybrid, graph queries).
 
 ### 5. GoDoc Documentation
 **Priority:** Medium
-**Status:** Public APIs lack godoc-friendly comments.
+**Status:** ✅ Complete — All public types, methods, and interfaces across all packages have godoc-friendly comments.
 **Action:** Add package-level and function-level doc comments for all public types and methods.
 
 ### 6. Benchmark Tests (`*_test.go`)
 **Priority:** Medium
-**Status:** No `Benchmark*` functions exist.
+**Status:** ✅ Complete — Benchmarks added for HNSW (Add/Search/SearchLarge), BM25 (AddDocument/Search/SearchLargeCorpus), chunking (SmallDoc/LargeDoc/VeryLargeDoc), and graph traversal (AddEntity/AddRelation/FindPath/Neighbors/TransitiveClosure/CommonNeighbors).
 **Action:** Add benchmarks for:
 - HNSW vs brute-force similarity search
 - BM25 scoring
