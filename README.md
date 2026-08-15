@@ -112,7 +112,7 @@ recall/
 - [x] Phase 3: Query engine with filters
 - [x] Phase 4: Hybrid search (BM25 + vector fusion)
 - [x] Phase 5: SQLite persistence (modernc.org/sqlite, pure Go)
-- [ ] Phase 6: HNSW ANN index
+- [x] Phase 6: HNSW ANN index (auto-enabled for 1K+ chunks)
 - [ ] Phase 7: RAG pipeline (context assembly)
 - [ ] Phase 8: Structured knowledge graph + inference
 
