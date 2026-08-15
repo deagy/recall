@@ -39,6 +39,10 @@ type SearchOptions struct {
 
 	// Fusion allows custom score fusion (overrides BM25Weight if set).
 	Fusion fuse.Fusion
+
+	// EfSearch controls the HNSW search width (only used when HNSW is active).
+	// 0 means use the default (50).
+	EfSearch int
 }
 
 // DefaultSearchOptions returns SearchOptions with sensible defaults.
