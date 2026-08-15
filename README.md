@@ -1,15 +1,17 @@
 # Recall — Go Knowledge Store for RAG
 
-A Go library for building Retrieval-Augmented Generation (RAG) applications. Recall provides structured storage, embedding-based similarity search, metadata filtering, document chunking, and persistent SQLite storage — all with zero CGO required.
+A Go library for building Retrieval-Augmented Generation (RAG) applications. Recall provides structured storage, embedding-based similarity search, metadata filtering, document chunking, persistent SQLite storage, HNSW ANN indexing, and RAG pipeline context assembly — all with zero CGO required.
 
 ## Features
 
 - **Document Chunking** — Pluggable chunking strategies (fixed-size, recursive paragraph/sentence splitting)
 - **Embedding Abstraction** — Dependency-injected embedders (bring your own: OpenAI, local models, or mock)
-- **Vector Similarity Search** — Cosine similarity with brute-force indexing
+- **Vector Similarity Search** — Cosine similarity with brute-force or HNSW ANN indexing
 - **Metadata Filtering** — Term, range, date range, and custom filters
 - **Hybrid Search** — BM25 keyword + vector score fusion with WeightedFusion or RRF
 - **SQLite Persistence** — Persistent storage with `modernc.org/sqlite` (pure Go, no CGO)
+- **HNSW ANN Index** — Approximate nearest neighbor search for 100K+ chunks
+- **RAG Pipeline** — Context assembly, prompt templating, token management
 - **Multi-namespace** — Isolated knowledge spaces within a single store
 - **Zero CGO** — Pure Go standard library only for core; SQLite via pure Go driver
 
@@ -86,8 +88,9 @@ recall/
 ├── core/           # Data types: Chunk, Document, Value, errors
 ├── chunker/        # Text chunking: Fixed, Recursive strategies
 ├── embedder/       # Embedding interface + Mock implementation
-├── index/          # Storage index: Memory (brute-force), filters
+├── index/          # Storage index: Memory (brute-force + HNSW), filters
 ├── store/          # High-level store: Memory + SQLite backends
+├── pipeline/       # RAG pipeline: context assembly, templates, queries
 ├── bm25/           # BM25 keyword ranking function
 ├── fuse/           # Score fusion: WeightedFusion, RRFFusion
 ├── query/          # Query engine (planned)
@@ -113,7 +116,7 @@ recall/
 - [x] Phase 4: Hybrid search (BM25 + vector fusion)
 - [x] Phase 5: SQLite persistence (modernc.org/sqlite, pure Go)
 - [x] Phase 6: HNSW ANN index (auto-enabled for 1K+ chunks)
-- [ ] Phase 7: RAG pipeline (context assembly)
+- [x] Phase 7: RAG pipeline (context assembly, prompt templates, token management)
 - [ ] Phase 8: Structured knowledge graph + inference
 
 ## Testing
