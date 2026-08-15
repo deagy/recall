@@ -657,3 +657,77 @@ func TestPath_EmptyEntities(t *testing.T) {
 	path := &Path{Relations: []*Relation{}}
 	assert.Empty(t, path.Entities, "expected empty entities")
 }
+
+func BenchmarkAddEntity(b *testing.B) {
+	g := NewKnowledgeGraph()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		g.AddEntity(NewEntity(string(rune('a'+i%26)), string(rune('a'+i%26)), EntityPerson))
+	}
+}
+
+func BenchmarkAddRelation(b *testing.B) {
+	g := NewKnowledgeGraph()
+	g.AddEntity(NewEntity("e1", "Alice", EntityPerson))
+	g.AddEntity(NewEntity("e2", "Bob", EntityPerson))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		g.AddRelation(NewRelation("e1", "e2", "knows", 0.9))
+	}
+}
+
+func BenchmarkFindPath(b *testing.B) {
+	g := NewKnowledgeGraph()
+	for i := 0; i < 100; i++ {
+		g.AddEntity(NewEntity(string(rune('a'+i%26)), string(rune('a'+i%26)), EntityPerson))
+		if i > 0 {
+			g.AddRelation(NewRelation(string(rune('a'+(i-1)%26)), string(rune('a'+i%26)), "knows", 0.9))
+		}
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		g.FindPath(string(rune('a')), string(rune('a'+99%26)))
+	}
+}
+
+func BenchmarkNeighbors(b *testing.B) {
+	g := NewKnowledgeGraph()
+	for i := 0; i < 100; i++ {
+		g.AddEntity(NewEntity(string(rune('a'+i%26)), string(rune('a'+i%26)), EntityPerson))
+		if i > 0 {
+			g.AddRelation(NewRelation(string(rune('a'+(i-1)%26)), string(rune('a'+i%26)), "knows", 0.9))
+		}
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		g.Neighbors(string(rune('a')))
+	}
+}
+
+func BenchmarkTransitiveClosure(b *testing.B) {
+	g := NewKnowledgeGraph()
+	for i := 0; i < 100; i++ {
+		g.AddEntity(NewEntity(string(rune('a'+i%26)), string(rune('a'+i%26)), EntityPerson))
+		if i > 0 {
+			g.AddRelation(NewRelation(string(rune('a'+(i-1)%26)), string(rune('a'+i%26)), "knows", 0.9))
+		}
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		g.TransitiveClosure(string(rune('a')))
+	}
+}
+
+func BenchmarkCommonNeighbors(b *testing.B) {
+	g := NewKnowledgeGraph()
+	for i := 0; i < 100; i++ {
+		g.AddEntity(NewEntity(string(rune('a'+i%26)), string(rune('a'+i%26)), EntityPerson))
+		if i > 0 {
+			g.AddRelation(NewRelation(string(rune('a'+(i-1)%26)), string(rune('a'+i%26)), "knows", 0.9))
+		}
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		g.CommonNeighbors(string(rune('a')), string(rune('a'+50%26)))
+	}
+}

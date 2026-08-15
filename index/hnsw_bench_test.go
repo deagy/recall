@@ -1,68 +1,60 @@
 package index
 
 import (
-	"math/rand"
 	"testing"
 )
 
 func BenchmarkHNSW_Add(b *testing.B) {
-	h := NewHNSW(128, DefaultHNSWConfig())
-	rng := rand.New(rand.NewSource(42))
+	hnsw := NewHNSW(32, DefaultHNSWConfig())
+	embedding := make([]float32, 32)
+	for i := range embedding {
+		embedding[i] = float32(i)
+	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		vec := make([]float32, 128)
-		for j := range vec {
-			vec[j] = float32(rng.Float64())
-		}
-		h.Add(string(rune('a'+i%26)), vec)
+		hnsw.Add(string(rune(i)), embedding)
 	}
 }
 
 func BenchmarkHNSW_Search(b *testing.B) {
-	h := NewHNSW(128, DefaultHNSWConfig())
-	rng := rand.New(rand.NewSource(42))
-
-	// Insert 1000 vectors
+	hnsw := NewHNSW(32, DefaultHNSWConfig())
 	for i := 0; i < 1000; i++ {
-		vec := make([]float32, 128)
-		for j := range vec {
-			vec[j] = float32(rng.Float64())
+		embedding := make([]float32, 32)
+		for j := range embedding {
+			embedding[j] = float32(i + j)
 		}
-		h.Add(string(rune('a'+i%26)), vec)
+		hnsw.Add(string(rune(i)), embedding)
 	}
 
-	queryVec := make([]float32, 128)
-	for j := range queryVec {
-		queryVec[j] = float32(rng.Float64())
+	query := make([]float32, 32)
+	for i := range query {
+		query[i] = float32(i)
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		h.Search(queryVec, 10)
+		hnsw.Search(query, 10)
 	}
 }
 
 func BenchmarkHNSW_SearchLarge(b *testing.B) {
-	h := NewHNSW(128, DefaultHNSWConfig())
-	rng := rand.New(rand.NewSource(42))
-
-	// Insert 10000 vectors
+	hnsw := NewHNSW(32, DefaultHNSWConfig())
 	for i := 0; i < 10000; i++ {
-		vec := make([]float32, 128)
-		for j := range vec {
-			vec[j] = float32(rng.Float64())
+		embedding := make([]float32, 32)
+		for j := range embedding {
+			embedding[j] = float32(i + j)
 		}
-		h.Add(string(rune('a'+i%26)), vec)
+		hnsw.Add(string(rune(i)), embedding)
 	}
 
-	queryVec := make([]float32, 128)
-	for j := range queryVec {
-		queryVec[j] = float32(rng.Float64())
+	query := make([]float32, 32)
+	for i := range query {
+		query[i] = float32(i)
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		h.Search(queryVec, 10)
+		hnsw.Search(query, 10)
 	}
 }

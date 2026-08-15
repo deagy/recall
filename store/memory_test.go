@@ -752,3 +752,69 @@ func TestMemoryStore_Upload_ContentWithSpecialChars(t *testing.T) {
 	err := s.Upload(context.Background(), doc, content)
 	assert.NoError(t, err, "upload with special characters should succeed")
 }
+
+func BenchmarkMemoryStore_Upload(b *testing.B) {
+	s, err := NewMemoryStore(Config{
+		Namespace:      "bench",
+		Embedder:       embedder.NewMockEmbedder(32),
+		ChunkerFactory: chunker.NewFixed,
+	})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer s.Close()
+
+	doc := core.NewDocument("doc-1", "Test", "source")
+	content := "This is a test document with enough text to be chunked properly. "
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		s.Upload(context.Background(), doc, content)
+	}
+}
+
+func BenchmarkMemoryStore_Search(b *testing.B) {
+	s, err := NewMemoryStore(Config{
+		Namespace:      "bench",
+		Embedder:       embedder.NewMockEmbedder(32),
+		ChunkerFactory: chunker.NewFixed,
+	})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer s.Close()
+
+	ctx := context.Background()
+	for i := 0; i < 100; i++ {
+		doc := core.NewDocument(string(rune('a'+i%26)), "Test", "source")
+		content := "This is a test document with enough text to be chunked properly. "
+		s.Upload(ctx, doc, content)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		s.Search(ctx, "test document", index.DefaultSearchOptions(10))
+	}
+}
+
+func BenchmarkMemoryStore_Delete(b *testing.B) {
+	s, err := NewMemoryStore(Config{
+		Namespace:      "bench",
+		Embedder:       embedder.NewMockEmbedder(32),
+		ChunkerFactory: chunker.NewFixed,
+	})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer s.Close()
+
+	ctx := context.Background()
+	doc := core.NewDocument("doc-1", "Test", "source")
+	content := "This is a test document with enough text to be chunked properly. "
+	s.Upload(ctx, doc, content)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		s.DeleteChunk("doc-1::chunk-0")
+	}
+}

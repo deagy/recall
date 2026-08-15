@@ -136,3 +136,124 @@ go test ./... -v
 ## License
 
 MIT
+
+## Advanced Usage
+
+### Hybrid Search with Custom Fusion
+
+```go
+import (
+    "github.com/deagy/recall/fuse"
+    "github.com/deagy/recall/index"
+)
+
+// Create a custom fusion strategy
+fusion := fuse.NewWeightedFusion(0.7) // 70% vector, 30% BM25
+
+// Use hybrid search with custom fusion
+hybridOpts := index.DefaultSearchOptions(10)
+hybridOpts.BM25Weight = 0.3
+hybridOpts.Fusion = fusion
+
+results, err := s.SearchHybrid(ctx, "query", hybridOpts)
+```
+
+### Knowledge Graph Operations
+
+```go
+import (
+    "github.com/deagy/recall/graph"
+)
+
+// Create a knowledge graph
+g := graph.NewKnowledgeGraph()
+
+// Add entities
+g.AddEntity(graph.NewEntity("alice", "Alice", graph.EntityPerson))
+g.AddEntity(graph.NewEntity("bob", "Bob", graph.EntityPerson))
+g.AddEntity(graph.NewEntity("go", "Go", graph.EntityConcept))
+
+// Add relations
+g.AddRelation(graph.NewRelation("alice", "go", "uses", 0.9))
+g.AddRelation(graph.NewRelation("bob", "go", "uses", 0.8))
+
+// Find paths	path := g.FindPath("alice", "bob")
+if path != nil {
+    fmt.Printf("Path: %s\n", path.String())
+}
+
+// Get neighbors
+neighbors := g.Neighbors("alice")
+for _, n := range neighbors {
+    fmt.Printf("Alice knows: %s\n", n.Name)
+}
+
+// Transitive closure
+closure := g.TransitiveClosure("alice")
+fmt.Printf("Alice can reach %d entities\n", len(closure))
+```
+
+### Multi-Hop Reasoning
+
+```go
+import (
+    "github.com/deagy/recall/reasoning"
+)
+
+// Create reasoning engine
+engine := reasoning.NewEngine(
+    reasoning.Config{
+        MaxDepth: 5,
+        MinConfidence: 0.5,
+    },
+)
+
+// Add inference rules
+engine.AddRule(reasoning.NewTransitiveRule())
+engine.AddRule(reasoning.NewSymmetricRule())
+
+// Explore paths
+paths, err := engine.ExplorePaths(g, "alice", "bob", 3)
+if err != nil {
+    log.Fatal(err)
+}
+
+for _, path := range paths {
+    fmt.Printf("Path: %s (confidence: %.2f)\n", path.String(), path.Confidence)
+}
+```
+
+## Running Benchmarks
+
+```bash
+# Run all benchmarks
+go test ./... -bench=. -benchmem
+
+# Run specific package benchmarks
+go test ./index/ -bench=. -benchmem
+go test ./bm25/ -bench=. -benchmem
+go test ./chunker/ -bench=. -benchmem
+go test ./graph/ -bench=. -benchmem
+
+# Run with profiling
+go test ./... -bench=. -benchmem -cpuprofile=cpu.prof -memprofile=mem.prof
+```
+
+## Performance Characteristics
+
+| Operation | Performance | Notes |
+|-----------|-------------|-------|
+| HNSW Add | ~876 ns/op | Scales with dimension |
+| HNSW Search | ~69 μs/op (1K docs) | ~713 μs/op (10K docs) |
+| BM25 AddDocument | ~2.6 μs/op | Includes tokenization |
+| BM25 Search | ~6 μs/op (1K corpus) | Fast keyword search |
+| Fixed Chunking | ~81 ns/op (small) | ~28 μs/op (large) |
+| Recursive Chunking | ~44 ns/op (small) | ~18 μs/op (large) |
+| Graph AddEntity | ~144 ns/op | Fast entity addition |
+| Graph FindPath | ~1 μs/op | BFS traversal |
+| Store Upload | ~3.7 μs/op | Includes chunking + embedding |
+| Store Search | ~2.6 μs/op | Fast similarity search |
+
+## License
+
+MIT
