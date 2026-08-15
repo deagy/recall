@@ -120,7 +120,8 @@ recall/
 - [x] Phase 6: HNSW ANN index (auto-enabled for 1K+ chunks)
 - [x] Phase 7: RAG pipeline (context assembly, prompt templates, token management)
 - [x] Phase 8: Knowledge graph (entity/relation extraction, BFS/DFS traversal, transitive closure, path finding, common-neighbor inference)
-- [ ] Phase 9: Graph-based RAG (graph-augmented retrieval, multi-hop reasoning)
+- [x] Phase 9: Graph-based RAG (GraphStore interface, entity/relation extraction from text, graph-augmented retrieval)
+- [ ] Phase 10: Multi-hop reasoning engine (automated path generation, relationship inference chains)
 
 ## Testing
 
