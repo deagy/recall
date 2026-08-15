@@ -165,3 +165,176 @@ func TestTransitiveRule_Apply_NilRelation(t *testing.T) {
 		t.Fatal("expected non-nil inferred relation")
 	}
 }
+
+func TestInverseRule_Apply(t *testing.T) {
+	rule := &InverseRule{MinWeight: 0.5}
+	rel := graph.NewRelation("alice", "bob", "knows", 0.9)
+
+	inferred, ok := rule.Apply(rel)
+	require.True(t, ok, "inverse rule should apply")
+	require.Equal(t, "knows_reverse", inferred.Type, "expected inverse type")
+	require.Equal(t, "bob", inferred.From, "expected reversed from")
+	require.Equal(t, "alice", inferred.To, "expected reversed to")
+	require.InDelta(t, 0.81, inferred.Weight, 0.01, "expected 0.9*0.9 weight")
+}
+
+func TestInverseRule_Apply_BelowMinWeight(t *testing.T) {
+	rule := &InverseRule{MinWeight: 0.5}
+	rel := graph.NewRelation("alice", "bob", "knows", 0.3)
+
+	_, ok := rule.Apply(rel)
+	require.False(t, ok, "inverse rule should not apply below min weight")
+}
+
+func TestCompositionRule_Apply(t *testing.T) {
+	rule := &CompositionRule{
+		Rules: map[string]string{
+			"located_in|works_at": "works_in",
+		},
+		MinWeight: 0.5,
+	}
+
+	// Test single relation (should return as-is)
+	rel := graph.NewRelation("alice", "bob", "works_at", 0.9)
+	inferred, ok := rule.Apply(rel)
+	require.True(t, ok, "composition rule should apply to single relation")
+	require.Equal(t, rel, inferred, "expected same relation for single relation")
+}
+
+func TestCompositionRule_ComposeRelations(t *testing.T) {
+	rule := &CompositionRule{
+		Rules: map[string]string{
+			"located_in|works_at": "works_in",
+		},
+		MinWeight: 0.5,
+	}
+
+	rel1 := graph.NewRelation("alice", "paris", "located_in", 0.9)
+	rel2 := graph.NewRelation("paris", "france", "works_at", 0.8)
+
+	inferred, ok := rule.ComposeRelations(rel1, rel2)
+	require.True(t, ok, "composition should succeed")
+	require.Equal(t, "works_in", inferred.Type, "expected composed type")
+	require.Equal(t, "alice", inferred.From, "expected from")
+	require.Equal(t, "france", inferred.To, "expected to")
+	require.InDelta(t, 0.72, inferred.Weight, 0.01, "expected 0.9*0.8 weight")
+}
+
+func TestCompositionRule_ComposeRelations_NoMatch(t *testing.T) {
+	rule := &CompositionRule{
+		Rules: map[string]string{
+			"located_in|works_at": "works_in",
+		},
+		MinWeight: 0.5,
+	}
+
+	rel1 := graph.NewRelation("alice", "bob", "knows", 0.9)
+	rel2 := graph.NewRelation("charlie", "dave", "knows", 0.8)
+
+	_, ok := rule.ComposeRelations(rel1, rel2)
+	require.False(t, ok, "composition should fail for non-matching relations")
+}
+
+func TestCommonInterestRule_FindCommonInterests(t *testing.T) {
+	g := graph.NewKnowledgeGraph()
+	g.AddEntity(graph.NewEntity("alice", "Alice", graph.EntityPerson))
+	g.AddEntity(graph.NewEntity("bob", "Bob", graph.EntityPerson))
+	g.AddEntity(graph.NewEntity("charlie", "Charlie", graph.EntityPerson))
+	g.AddEntity(graph.NewEntity("go", "Go", graph.EntityConcept))
+
+	g.AddRelation(graph.NewRelation("alice", "go", "uses", 0.9))
+	g.AddRelation(graph.NewRelation("bob", "go", "uses", 0.8))
+
+	rule := &CommonInterestRule{MinCommonRelations: 1, MinWeight: 0.5}
+	common := rule.FindCommonInterests(g, "alice")
+
+	require.NotEmpty(t, common, "expected common interests")
+}
+
+func TestHierarchyRule_Apply(t *testing.T) {
+	rule := &HierarchyRule{
+		HierarchyTypes: []string{"is_a", "part_of"},
+		MinWeight: 0.5,
+	}
+
+	rel := graph.NewRelation("dog", "animal", "is_a", 0.9)
+	inferred, ok := rule.Apply(rel)
+	require.True(t, ok, "hierarchy rule should apply to hierarchical relation")
+	require.Equal(t, rel, inferred, "expected same relation")
+}
+
+func TestHierarchyRule_Apply_NonHierarchy(t *testing.T) {
+	rule := &HierarchyRule{
+		HierarchyTypes: []string{"is_a", "part_of"},
+		MinWeight: 0.5,
+	}
+
+	rel := graph.NewRelation("alice", "bob", "knows", 0.9)
+	_, ok := rule.Apply(rel)
+	require.False(t, ok, "hierarchy rule should not apply to non-hierarchical relation")
+}
+
+func TestProductAggregator_Aggregate(t *testing.T) {
+	agg := &ProductAggregator{Decay: 0.9}
+	scores := []float64{0.9, 0.8, 0.7}
+
+	result := agg.Aggregate(scores)
+	expected := 0.9 * 0.8 * 0.7 * 0.9 * 0.9
+	require.InDelta(t, expected, result, 0.01, "expected product with decay")
+}
+
+func TestProductAggregator_Aggregate_Empty(t *testing.T) {
+	agg := &ProductAggregator{Decay: 0.9}
+	result := agg.Aggregate([]float64{})
+	require.Equal(t, 0.0, result, "expected 0 for empty scores")
+}
+
+func TestMinAggregator_Aggregate(t *testing.T) {
+	agg := &MinAggregator{Decay: 0.9}
+	scores := []float64{0.9, 0.5, 0.7}
+
+	result := agg.Aggregate(scores)
+	expected := 0.5 * 0.9 * 0.9
+	require.InDelta(t, expected, result, 0.01, "expected minimum with decay")
+}
+
+func TestAverageAggregator_Aggregate(t *testing.T) {
+	agg := &AverageAggregator{Decay: 0.9}
+	scores := []float64{0.9, 0.8, 0.7}
+
+	result := agg.Aggregate(scores)
+	expected := (0.9 + 0.8 + 0.7) / 3.0 * 0.9
+	require.InDelta(t, expected, result, 0.01, "expected average with decay")
+}
+
+func TestDefaultAggregator(t *testing.T) {
+	agg := DefaultAggregator()
+	require.NotNil(t, agg, "expected non-nil aggregator")
+	require.IsType(t, &ProductAggregator{}, agg, "expected ProductAggregator")
+}
+
+func TestEntityExtractor_ExtractEntities(t *testing.T) {
+	extractor := NewEntityExtractor()
+	text := "Alice works at Google in New York"
+
+	entities := extractor.ExtractEntities(text)
+	require.NotEmpty(t, entities, "expected entities")
+}
+
+func TestEntityExtractor_ExpandQuery(t *testing.T) {
+	extractor := NewEntityExtractor()
+	query := "Go programming language"
+
+	expanded := extractor.ExpandQuery(query)
+	require.NotEmpty(t, expanded, "expected expanded query")
+	require.Contains(t, expanded, "go", "expected 'go' in expanded query")
+}
+
+func TestEntityExtractor_ExpandQuery_WithSynonyms(t *testing.T) {
+	extractor := NewEntityExtractor()
+	query := "Go"
+
+	expanded := extractor.ExpandQuery(query)
+	require.Contains(t, expanded, "golang", "expected 'golang' synonym")
+	require.Contains(t, expanded, "gopher", "expected 'gopher' synonym")
+}

@@ -257,3 +257,110 @@ go test ./... -bench=. -benchmem -cpuprofile=cpu.prof -memprofile=mem.prof
 ## License
 
 MIT
+
+## Multi-hop Reasoning
+
+```go
+import (
+    "github.com/deagy/recall/graph"
+    "github.com/deagy/recall/reasoning"
+)
+
+// Create a knowledge graph
+g := graph.NewKnowledgeGraph()
+g.AddEntity(graph.NewEntity("alice", "Alice", graph.EntityPerson))
+g.AddEntity(graph.NewEntity("bob", "Bob", graph.EntityPerson))
+g.AddEntity(graph.NewEntity("go", "Go", graph.EntityConcept))
+g.AddEntity(graph.NewEntity("google", "Google", graph.EntityOrganization))
+
+// Add relations
+g.AddRelation(graph.NewRelation("alice", "bob", "knows", 0.9))
+g.AddRelation(graph.NewRelation("bob", "go", "uses", 0.8))
+g.AddRelation(graph.NewRelation("go", "google", "created_by", 0.7))
+
+// Create reasoning engine
+engine := reasoning.NewEngine(g, reasoning.DefaultConfig())
+
+// Explore paths between entities
+paths := engine.ExplorePaths("alice", "google")
+for _, path := range paths {
+    fmt.Printf("Path: %s\n", path.String())
+}
+
+// Infer relations using rules
+inferred := engine.InferRelations()
+for _, ir := range inferred {
+    fmt.Printf("Inferred: %s\n", ir.String())
+}
+
+// Reason about natural language queries
+results := engine.Reason("Who created Go?", 3)
+for _, r := range results {
+    fmt.Printf("Answer: %s -> %s (confidence: %.2f)\n", r.From, r.To, r.Confidence)
+}
+```
+
+### Custom Inference Rules
+
+```go
+// Create custom inverse rule
+inverseRule := &reasoning.InverseRule{
+    Mappings: map[string]string{
+        "works_at": "works_for",
+        "created_by": "created",
+    },
+    MinWeight: 0.5,
+}
+
+// Create composition rule
+compositionRule := &reasoning.CompositionRule{
+    Rules: map[string]string{
+        "located_in|works_at": "works_in",
+    },
+    MinWeight: 0.5,
+}
+
+// Create engine with custom rules
+engine := reasoning.NewEngine(g, reasoning.Config{
+    MaxDepth:      5,
+    MinConfidence: 0.3,
+    Rules: []reasoning.InferenceRule{
+        inverseRule,
+        compositionRule,
+    },
+})
+```
+
+### Confidence Propagation
+
+```go
+// Use product aggregator (default)
+productAgg := &reasoning.ProductAggregator{Decay: 0.9}
+
+// Use minimum aggregator
+minAgg := &reasoning.MinAggregator{Decay: 0.9}
+
+// Use average aggregator
+avgAgg := &reasoning.AverageAggregator{Decay: 0.9}
+
+// Extract entities from text
+extractor := reasoning.NewEntityExtractor()
+entities := extractor.ExtractEntities("Alice works at Google in New York")
+
+// Expand query with synonyms
+expanded := extractor.ExpandQuery("Go")
+// Returns: ["go", "golang", "gopher"]
+```
+
+## Running Benchmarks
+
+```bash
+# Run all benchmarks
+go test ./... -bench=. -benchmem
+
+# Run specific package benchmarks
+go test ./reasoning/ -bench=. -benchmem
+
+# Run with profiling
+go test ./... -bench=. -benchmem -cpuprofile=cpu.prof -memprofile=mem.prof
+```
