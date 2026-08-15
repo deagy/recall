@@ -28,6 +28,8 @@ type SQLiteStore struct {
 	embedder embedder.Embedder
 	chunker  chunker.Chunker
 	db       *sql.DB
+	chunks   map[string]*core.Chunk // in-memory copy for HNSW
+	hnsw     *index.HNSW            // HNSW index for ANN search
 }
 
 // NewSQLiteStore creates a new SQLite-backed store.
@@ -59,6 +61,7 @@ func NewSQLiteStore(cfg Config, dbPath string) (*SQLiteStore, error) {
 		embedder: cfg.Embedder,
 		chunker:  cfg.ChunkerFactory(chunker.DefaultConfig()),
 		db:       db,
+		chunks:   make(map[string]*core.Chunk),
 	}
 
 	if err := s.createSchema(); err != nil {
@@ -159,8 +162,67 @@ func (s *SQLiteStore) Upload(ctx context.Context, doc *core.Document, content st
 		return fmt.Errorf("committing transaction: %w", err)
 	}
 
+	// Update in-memory copy for HNSW
+	for _, chunk := range chunks {
+		s.chunks[chunk.ID] = chunk
+	}
+
+	// Build HNSW if threshold reached
+	if len(s.chunks) > index.HNSWThreshold && s.hnsw == nil {
+		s.buildHNSW()
+	}
+
 	doc.ChunkCount = len(chunks)
 	return nil
+}
+
+// buildHNSW constructs the HNSW graph from in-memory chunks.
+func (s *SQLiteStore) buildHNSW() {
+	s.hnsw = index.NewHNSW(s.embedder.Dimension(), index.DefaultHNSWConfig())
+	for _, chunk := range s.chunks {
+		s.hnsw.Add(chunk.ID, chunk.Embedding)
+	}
+}
+
+// searchHNSW performs ANN search using the HNSW index.
+func (s *SQLiteStore) searchHNSW(ctx context.Context, embed []float32, opts index.SearchOptions) ([]index.SearchResult, error) {
+	if opts.TopK <= 0 {
+		opts.TopK = 10
+	}
+
+	// Check context before search
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
+	ids := s.hnsw.Search(embed, opts.TopK)
+
+	var results []index.SearchResult
+	for _, id := range ids {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+
+		chunk, ok := s.chunks[id]
+		if !ok {
+			continue
+		}
+		sim := cosineSimilarity(embed, chunk.Embedding)
+		if !matchesFilters(sim, chunk, opts.Filters) {
+			continue
+		}
+		results = append(results, index.SearchResult{Chunk: chunk, Score: sim})
+	}
+
+	sortResultsByScore(results)
+	if opts.TopK > 0 && len(results) > opts.TopK {
+		results = results[:opts.TopK]
+	}
+	return results, nil
 }
 
 // Search finds the most relevant chunks for a query string using vector similarity.
@@ -174,6 +236,12 @@ func (s *SQLiteStore) Search(ctx context.Context, query string, opts index.Searc
 		return nil, fmt.Errorf("embedding query: %w", err)
 	}
 
+	// Use HNSW for ANN search if available and dataset is large enough
+	if s.hnsw != nil && len(s.chunks) > index.HNSWThreshold {
+		return s.searchHNSW(ctx, queryEmbed, opts)
+	}
+
+	// Brute-force vector search
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT e.chunk_id, c.content, c.document_ref, c.chunk_index, c.metadata, e.namespace, e.embedding
 		 FROM embeddings e
@@ -187,6 +255,12 @@ func (s *SQLiteStore) Search(ctx context.Context, query string, opts index.Searc
 
 	var results []index.SearchResult
 	for rows.Next() {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+
 		var chunkID, content, docRef, metaJSON, ns string
 		var chunkIdx int
 		var embBytes []byte

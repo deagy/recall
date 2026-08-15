@@ -124,7 +124,8 @@ recall/
 - [x] Phase 8: Knowledge graph (entity/relation extraction, BFS/DFS traversal, transitive closure, path finding, common-neighbor inference)
 - [x] Phase 9: Graph-based RAG (GraphStore interface, entity/relation extraction from text, graph-augmented retrieval)
 - [x] Phase 10: Multi-hop reasoning engine (inference rules, depth-limited path exploration, confidence propagation, natural language query reasoning)
-- [ ] Phase 11: Pluggable NER + relation pattern extraction
+- [x] Phase 11: Pluggable NER + relation pattern extraction (HeuristicNER with stopword filtering, PatternRelationExtractor)
+- [x] Phase 12: Performance & robustness (context cancellation, SQLite HNSW mirroring, entity extraction heuristics)
 
 ## Testing
 

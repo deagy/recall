@@ -144,3 +144,84 @@ func TestMockNERExtractor_Extract_Error(t *testing.T) {
 	assert.Empty(t, entities)
 	m.AssertExpectations(t)
 }
+
+// --- HeuristicNER tests ---
+
+func TestHeuristicNER_SingleWordEntities(t *testing.T) {
+	ner := NewHeuristicNER()
+	entities, err := ner.Extract("Alice works at Google in Mountain View")
+	require.NoError(t, err)
+	require.NotEmpty(t, entities, "expected entities to be extracted")
+
+	ids := make(map[string]bool)
+	for _, e := range entities {
+		ids[e.ID] = true
+	}
+	assert.True(t, ids["alice"], "expected 'alice' entity")
+	assert.True(t, ids["google"], "expected 'google' entity")
+	assert.True(t, ids["mountain"], "expected 'mountain' entity")
+	assert.True(t, ids["view"], "expected 'view' entity")
+}
+
+func TestHeuristicNER_StopwordFiltering(t *testing.T) {
+	ner := NewHeuristicNER()
+	entities, err := ner.Extract("The cat sat on the mat")
+	require.NoError(t, err)
+	// All words are stopwords or lowercase, so no entities
+	assert.Empty(t, entities, "expected no entities from stopwords")
+}
+
+func TestHeuristicNER_MultiWordEntity(t *testing.T) {
+	ner := NewHeuristicNER()
+	// "New York City" is 13 chars, less than MinGroupLength (25), so treated as separate entities
+	entities, err := ner.Extract("I live in New York City")
+	require.NoError(t, err)
+	require.NotEmpty(t, entities, "expected entities to be extracted")
+
+	ids := make(map[string]bool)
+	for _, e := range entities {
+		ids[e.ID] = true
+	}
+	// Each word should be a separate entity
+	assert.True(t, ids["new"], "expected 'new' entity")
+	assert.True(t, ids["york"], "expected 'york' entity")
+	assert.True(t, ids["city"], "expected 'city' entity")
+}
+
+func TestHeuristicNER_Deduplication(t *testing.T) {
+	ner := NewHeuristicNER()
+	entities, err := ner.Extract("Alice works at Google. Alice lives in Mountain View")
+	require.NoError(t, err)
+
+	// Alice should only appear once
+	aliceCount := 0
+	for _, e := range entities {
+		if e.ID == "alice" {
+			aliceCount++
+		}
+	}
+	assert.Equal(t, 1, aliceCount, "expected alice to appear once")
+}
+
+func TestHeuristicNER_EmptyText(t *testing.T) {
+	ner := NewHeuristicNER()
+	entities, err := ner.Extract("")
+	require.NoError(t, err)
+	assert.Empty(t, entities, "expected no entities from empty text")
+}
+
+func TestHeuristicNER_LowercaseText(t *testing.T) {
+	ner := NewHeuristicNER()
+	entities, err := ner.Extract("alice works at google")
+	require.NoError(t, err)
+	// All lowercase, so no entities
+	assert.Empty(t, entities, "expected no entities from lowercase text")
+}
+
+func TestHeuristicNER_ShortWordsFiltered(t *testing.T) {
+	ner := NewHeuristicNER()
+	entities, err := ner.Extract("A I the cat")
+	require.NoError(t, err)
+	// "A", "I", "the" are stopwords or too short
+	assert.Empty(t, entities, "expected no entities from short/stopword text")
+}

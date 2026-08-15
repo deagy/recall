@@ -3,6 +3,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/deagy/recall/graph"
@@ -41,58 +42,58 @@ func NewMemoryGraphStore() *MemoryGraphStore {
 }
 
 // ExtractEntities extracts entities from text using simple heuristics.
-// Identifies capitalized words/phrases as potential entities.
+// Identifies capitalized words/phrases as potential entities with stopword filtering.
 func (s *MemoryGraphStore) ExtractEntities(_ context.Context, text string, sourceChunkID string) ([]*graph.Entity, error) {
-	words := strings.Fields(text)
-	var entities []*graph.Entity
-	seen := make(map[string]bool)
+	ner := graph.NewHeuristicNER()
+	entities, err := ner.Extract(text)
+	if err != nil {
+		return nil, fmt.Errorf("extracting entities: %w", err)
+	}
 
-	for _, word := range words {
-		if len(word) > 1 && word[0] >= 'A' && word[0] <= 'Z' {
-			cleaned := strings.Trim(word, ".,;:!?\"'()[]{}")
-			if len(cleaned) <= 1 {
-				continue
-			}
-			id := strings.ToLower(cleaned)
-			if seen[id] {
-				continue
-			}
-			seen[id] = true
-
-			e := graph.NewEntity(id, cleaned, graph.EntityOther)
-			e.AddSourceChunk(sourceChunkID)
-			if s.graph.AddEntity(e) {
-				entities = append(entities, e)
-			}
+	for _, e := range entities {
+		e.AddSourceChunk(sourceChunkID)
+		if s.graph.AddEntity(e) {
+			// Re-add to graph to update source chunks
+			s.graph.AddEntity(e)
 		}
 	}
 	return entities, nil
 }
 
-// ExtractRelations extracts relations from text using simple heuristics.
+// ExtractRelations extracts relations from text using pattern matching.
+// Falls back to adjacent capitalized word detection if no patterns match.
 func (s *MemoryGraphStore) ExtractRelations(_ context.Context, text string, sourceChunkID string) ([]*graph.Relation, error) {
-	words := strings.Fields(text)
-	var relations []*graph.Relation
+	// Extract relations using patterns
+	relExtractor := &graph.PatternRelationExtractor{Patterns: graph.DefaultPatterns()}
+	relations := relExtractor.ExtractRelations(text)
 
-	for i := 0; i < len(words)-1; i++ {
-		w1 := strings.Trim(words[i], ".,;:!?\"'()[]{}")
-		w2 := strings.Trim(words[i+1], ".,;:!?\"'()[]{}")
-		if len(w1) <= 1 || len(w2) <= 1 {
-			continue
-		}
-		if w1[0] >= 'A' && w1[0] <= 'Z' && w2[0] >= 'A' && w2[0] <= 'Z' {
-			fromID := strings.ToLower(w1)
-			toID := strings.ToLower(w2)
-			if fromID != toID {
-				if _, ok := s.graph.GetEntity(fromID); ok {
-					if _, ok := s.graph.GetEntity(toID); ok {
-						rel := graph.NewRelation(fromID, toID, "related_to", 0.5)
-						rel.AddSourceChunk(sourceChunkID)
-						if s.graph.AddRelation(rel) {
-							relations = append(relations, rel)
-						}
+	// If no pattern matches, fall back to adjacent capitalized word detection
+	if len(relations) == 0 {
+		words := strings.Fields(text)
+		for i := 0; i < len(words)-1; i++ {
+			w1 := strings.Trim(words[i], ".,;:!?\"'()[]{}")
+			w2 := strings.Trim(words[i+1], ".,;:!?\"'()[]{}")
+			if len(w1) <= 1 || len(w2) <= 1 {
+				continue
+			}
+			if w1[0] >= 'A' && w1[0] <= 'Z' && w2[0] >= 'A' && w2[0] <= 'Z' {
+				fromID := strings.ToLower(w1)
+				toID := strings.ToLower(w2)
+				if fromID != toID {
+					rel := graph.NewRelation(fromID, toID, "related_to", 0.5)
+					rel.AddSourceChunk(sourceChunkID)
+					if s.graph.AddRelation(rel) {
+						relations = append(relations, rel)
 					}
 				}
+			}
+		}
+	} else {
+		for _, r := range relations {
+			r.AddSourceChunk(sourceChunkID)
+			if s.graph.AddRelation(r) {
+				// Re-add to graph to update source chunks
+				s.graph.AddRelation(r)
 			}
 		}
 	}

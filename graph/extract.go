@@ -113,3 +113,120 @@ func ExtractEntitiesWithPatterns(text string, patterns []*RelationPattern) []*En
 	sort.Sort(Entities(entities))
 	return entities
 }
+
+// HeuristicNER extracts entities using capitalized word detection with
+// stopword filtering and multi-word grouping.
+type HeuristicNER struct {
+	Stopwords       map[string]bool
+	MinLength       int
+	MinGroupLength  int // minimum total length for multi-word grouping (default 8)
+}
+
+// DefaultStopwords is a list of common English stopwords that are unlikely
+// to be meaningful entity names on their own.
+var DefaultStopwords = map[string]bool{
+	"a": true, "an": true, "the": true, "and": true, "or": true,
+	"but": true, "in": true, "on": true, "at": true, "to": true,
+	"for": true, "of": true, "with": true, "by": true, "from": true,
+	"is": true, "are": true, "was": true, "were": true, "be": true,
+	"been": true, "being": true, "have": true, "has": true, "had": true,
+	"do": true, "does": true, "did": true, "will": true, "would": true,
+	"could": true, "should": true, "may": true, "might": true, "shall": true,
+	"can": true, "it": true, "its": true, "this": true, "that": true,
+	"these": true, "those": true, "i": true, "we": true, "they": true,
+	"he": true, "she": true, "you": true, "me": true, "my": true,
+	"your": true, "his": true, "her": true, "our": true, "their": true,
+	"what": true, "which": true, "who": true, "whom": true, "where": true,
+	"when": true, "how": true, "not": true, "no": true, "nor": true,
+}
+
+// NewHeuristicNER creates a HeuristicNER with default settings.
+func NewHeuristicNER() *HeuristicNER {
+	return &HeuristicNER{
+		Stopwords:      DefaultStopwords,
+		MinLength:      2,
+		MinGroupLength: 25, // only group if total length >= 25 (e.g., "New York City" = 13, "John Fitzgerald Kennedy" = 23)
+	}
+}
+
+// Extract identifies capitalized words and groups consecutive capitalized words
+// into multi-word entities, filtering stopwords and short tokens.
+func (h *HeuristicNER) Extract(text string) ([]*Entity, error) {
+	words := strings.Fields(text)
+	var entities []*Entity
+	seen := make(map[string]bool)
+
+	// Group consecutive capitalized words into multi-word entities
+	i := 0
+	for i < len(words) {
+		word := words[i]
+		cleaned := strings.Trim(word, ".,;:!?\"'()[]{}")
+		if len(cleaned) < h.MinLength {
+			i++
+			continue
+		}
+
+		// Check if word starts with uppercase
+		if word[0] >= 'A' && word[0] <= 'Z' {
+			// Group consecutive capitalized words
+			var group []string
+			for i < len(words) {
+				w := words[i]
+				c := strings.Trim(w, ".,;:!?\"'()[]{}")
+				if len(c) >= h.MinLength && w[0] >= 'A' && w[0] <= 'Z' {
+					group = append(group, c)
+					i++
+				} else {
+					break
+				}
+			}
+
+			// Skip if all words in group are stopwords
+			allStop := true
+			for _, g := range group {
+				if !h.Stopwords[strings.ToLower(g)] {
+					allStop = false
+					break
+				}
+			}
+			if allStop {
+				continue
+			}
+
+			// Create entity from group
+			var entityLabel string
+			var entityID string
+
+			if len(group) == 1 {
+				// Single-word entity
+				entityLabel = group[0]
+				entityID = strings.ToLower(entityLabel)
+			} else {
+				// Multi-word entity: only group if total length meets threshold
+				entityLabel = strings.Join(group, " ")
+				entityID = strings.ToLower(entityLabel)
+
+				// If group is too short, treat each word as a separate entity
+				if len(entityLabel) < h.MinGroupLength {
+					for _, g := range group {
+						id := strings.ToLower(g)
+						if !seen[id] {
+							seen[id] = true
+							entities = append(entities, NewEntity(id, g, EntityOther))
+						}
+					}
+					continue
+				}
+			}
+
+			if !seen[entityID] {
+				seen[entityID] = true
+				entities = append(entities, NewEntity(entityID, entityLabel, EntityOther))
+			}
+		} else {
+			i++
+		}
+	}
+
+	return entities, nil
+}
