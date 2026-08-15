@@ -17,13 +17,15 @@ import (
 // MemoryIndex is an in-memory index that stores chunks and their embeddings.
 // For datasets > HNSWThreshold, it uses an HNSW graph for approximate nearest neighbor search.
 type MemoryIndex struct {
-	mu          sync.RWMutex
-	namespace   string
-	dimension   int
-	chunks      map[string]*core.Chunk
-	bm25        *bm25.BM25
-	hnsw        *HNSW
-	hnswEnabled bool
+	mu                 sync.RWMutex
+	namespace          string
+	dimension          int
+	chunks             map[string]*core.Chunk
+	bm25               *bm25.BM25
+	hnsw               *HNSW
+	hnswEnabled        bool
+	deleted            map[string]bool // tombstones for HNSW
+	tombstoneThreshold float64         // ratio of deleted entries to trigger rebuild
 }
 
 // HNSWThreshold is the number of chunks above which HNSW is used for search.
@@ -103,21 +105,45 @@ func (m *MemoryIndex) buildHNSW() {
 func (m *MemoryIndex) Delete(_ context.Context, id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	delete(m.chunks, id)
-	m.bm25.RemoveDocument(id)
+
+	// Check if HNSW is enabled and tombstone ratio exceeds threshold
 	if m.hnswEnabled {
-		m.buildHNSW()
+		if m.deleted == nil {
+			m.deleted = make(map[string]bool)
+		}
+		m.deleted[id] = true
+		tombstoneRatio := float64(len(m.deleted)) / float64(len(m.chunks))
+		if tombstoneRatio > m.tombstoneThreshold {
+			m.rebuildHNSW()
+		}
+	} else {
+		delete(m.chunks, id)
+		m.bm25.RemoveDocument(id)
 	}
 	return nil
+}
+
+// rebuildHNSW rebuilds the HNSW graph excluding tombstoned entries.
+func (m *MemoryIndex) rebuildHNSW() {
+	cfg := DefaultHNSWConfig()
+	h := NewHNSW(m.dimension, cfg)
+	for id, chunk := range m.chunks {
+		if !m.deleted[id] {
+			h.Add(id, chunk.Embedding)
+		}
+	}
+	m.hnsw = h
+	m.deleted = make(map[string]bool)
 }
 
 // NewMemoryIndex creates a new in-memory index.
 func NewMemoryIndex(namespace string, dimension int) *MemoryIndex {
 	return &MemoryIndex{
-		namespace: namespace,
-		dimension: dimension,
-		chunks:    make(map[string]*core.Chunk),
-		bm25:      bm25.New(bm25.DefaultConfig()),
+		namespace:          namespace,
+		dimension:          dimension,
+		chunks:             make(map[string]*core.Chunk),
+		bm25:               bm25.New(bm25.DefaultConfig()),
+		tombstoneThreshold: 0.2, // rebuild when 20% of entries are deleted
 	}
 }
 

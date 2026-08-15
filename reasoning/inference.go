@@ -15,6 +15,24 @@ type InferenceRule interface {
 	Apply(rel *graph.Relation) (*graph.Relation, bool)
 }
 
+// ReverseRule infers that if A->B, then B->A (reverse relation).
+type ReverseRule struct {
+	// MinWeight is the minimum confidence for inferred relations.
+	MinWeight float64
+}
+
+// Name implements InferenceRule.
+func (r *ReverseRule) Name() string { return "reverse" }
+
+// Apply implements InferenceRule.
+func (r *ReverseRule) Apply(rel *graph.Relation) (*graph.Relation, bool) {
+	if rel.Weight < r.MinWeight {
+		return nil, false
+	}
+	inferred := graph.NewRelation(rel.To, rel.From, rel.Type+"_reverse", rel.Weight*0.8)
+	return inferred, true
+}
+
 // TransitiveRule infers that if A->B and B->C, then A->C.
 type TransitiveRule struct {
 	// MinWeight is the minimum confidence for inferred relations.
@@ -25,12 +43,14 @@ type TransitiveRule struct {
 func (r *TransitiveRule) Name() string { return "transitive" }
 
 // Apply implements InferenceRule.
+// Note: TransitiveRule requires two relations (A->B, B->C) to infer A->C.
+// When applied to a single relation, it returns the relation unchanged if weight is sufficient.
 func (r *TransitiveRule) Apply(rel *graph.Relation) (*graph.Relation, bool) {
 	if rel.Weight < r.MinWeight {
 		return nil, false
 	}
-	inferred := graph.NewRelation(rel.To, rel.From, rel.Type+"_(reverse)", rel.Weight*0.8)
-	return inferred, true
+	// For single-relation application, return the relation as-is (transitive closure requires pair)
+	return rel, true
 }
 
 // SymmetricRule infers that if A->B, then B->A (for symmetric relationships).
@@ -76,6 +96,7 @@ func (r *AntiSymmetricRule) Apply(rel *graph.Relation) (*graph.Relation, bool) {
 // DefaultRules returns the default set of inference rules.
 func DefaultRules() []InferenceRule {
 	return []InferenceRule{
+		&ReverseRule{MinWeight: 0.5},
 		&TransitiveRule{MinWeight: 0.5},
 		&SymmetricRule{RelationTypes: []string{"knows", "related_to", "friend"}},
 		&AntiSymmetricRule{RelationTypes: []string{"works_at", "parent_of", "teaches"}},

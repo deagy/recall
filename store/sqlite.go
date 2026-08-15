@@ -9,12 +9,12 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
 	_ "modernc.org/sqlite"
 
-	"github.com/deagy/recall/bm25"
 	"github.com/deagy/recall/chunker"
 	"github.com/deagy/recall/core"
 	"github.com/deagy/recall/embedder"
@@ -28,7 +28,6 @@ type SQLiteStore struct {
 	embedder embedder.Embedder
 	chunker  chunker.Chunker
 	db       *sql.DB
-	bm25s    map[string]*bm25.BM25 // fallback BM25 for namespaces without FTS5
 }
 
 // NewSQLiteStore creates a new SQLite-backed store.
@@ -60,7 +59,6 @@ func NewSQLiteStore(cfg Config, dbPath string) (*SQLiteStore, error) {
 		embedder: cfg.Embedder,
 		chunker:  cfg.ChunkerFactory(chunker.DefaultConfig()),
 		db:       db,
-		bm25s:    make(map[string]*bm25.BM25),
 	}
 
 	if err := s.createSchema(); err != nil {
@@ -155,17 +153,6 @@ func (s *SQLiteStore) Upload(ctx context.Context, doc *core.Document, content st
 		if err != nil {
 			return fmt.Errorf("inserting embedding: %w", err)
 		}
-
-		s.mu.RLock()
-		bm25Idx, ok := s.bm25s[ns]
-		s.mu.RUnlock()
-		if !ok {
-			s.mu.Lock()
-			bm25Idx = bm25.New(bm25.DefaultConfig())
-			s.bm25s[ns] = bm25Idx
-			s.mu.Unlock()
-		}
-		bm25Idx.AddDocument(chunk.ID, chunk.Content)
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -233,44 +220,142 @@ func (s *SQLiteStore) Search(ctx context.Context, query string, opts index.Searc
 	return results, nil
 }
 
-// SearchHybrid performs hybrid search combining vector similarity and BM25 keyword scores.
+// SearchHybrid performs hybrid search combining vector similarity and BM25 keyword scores via FTS5.
 func (s *SQLiteStore) SearchHybrid(ctx context.Context, query string, opts index.SearchOptions) ([]index.SearchResult, error) {
 	if query == "" {
 		return nil, core.ErrEmptyQuery
 	}
 
-	vecResults, err := s.Search(ctx, query, opts)
+	// Vector search
+	embed, err := s.embedder.Embed(ctx, query)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("embedding query: %w", err)
+	}
+	if embed == nil {
+		return nil, fmt.Errorf("embedding query failed")
 	}
 
-	vecScoreMap := make(map[string]float64)
-	for _, r := range vecResults {
-		vecScoreMap[r.Chunk.ID] = r.Score
-	}
-
-	// Use BM25 fallback (FTS5 not available with modernc.org/sqlite)
-	bm25Scores := s.searchBm25Fallback(query, opts)
-
-	return fuseScores(vecScoreMap, bm25Scores, vecResults, opts)
-}
-
-// searchBm25Fallback uses the in-memory BM25 index as fallback.
-func (s *SQLiteStore) searchBm25Fallback(query string, opts index.SearchOptions) map[string]float64 {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	bm25Idx, ok := s.bm25s[s.config.Namespace]
-	if !ok {
-		return nil
-	}
+	// FTS5 keyword search
+	ftsResults := s.searchFTS5(query, opts)
 
-	results := bm25Idx.Search(query)
+	// Build fused results
+	return s.fuseFTS5Results(ctx, embed, ftsResults, opts)
+}
+
+// searchFTS5 performs keyword search using FTS5.
+func (s *SQLiteStore) searchFTS5(query string, opts index.SearchOptions) map[string]float64 {
+	// Escape single quotes for FTS5 query
+	escaped := strings.ReplaceAll(query, "'", "''")
+	sql := `
+		SELECT c.id, rank
+		FROM chunks c
+		INNER JOIN chunks_fts ON chunks_fts.rowid = c.rowid
+		WHERE chunks_fts MATCH ?
+		ORDER BY rank
+		LIMIT ?
+	`
+
+	rows, err := s.db.Query(sql, escaped, opts.TopK)
+	if err != nil {
+		// FTS5 not available, return empty
+		return make(map[string]float64)
+	}
+	defer rows.Close()
+
 	scores := make(map[string]float64)
-	for _, r := range results {
-		scores[r.DocID] = r.Score
+	for rows.Next() {
+		var id string
+		var rank float64
+		if err := rows.Scan(&id, &rank); err != nil {
+			continue
+		}
+		// Convert rank (lower is better) to score (higher is better)
+		scores[id] = 1.0 / (1.0 + rank)
 	}
 	return scores
+}
+
+// fuseFTS5Results fuses vector and FTS5 scores into final results.
+func (s *SQLiteStore) fuseFTS5Results(ctx context.Context, query []float32, ftsResults map[string]float64, opts index.SearchOptions) ([]index.SearchResult, error) {
+	// Get all chunks with embeddings
+	rows, err := s.db.Query(`
+		SELECT c.id, c.content, c.document_ref, c.chunk_index, c.metadata, e.embedding
+		FROM chunks c
+		LEFT JOIN embeddings e ON c.id = e.chunk_id
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("querying chunks: %w", err)
+	}
+	defer rows.Close()
+
+	type fusedResult struct {
+		chunk *core.Chunk
+		score float64
+	}
+	var results []fusedResult
+
+	for rows.Next() {
+		var chunkID, content, docRef string
+		var chunkIdx int
+		var metaJSON, embBytes []byte
+		if err := rows.Scan(&chunkID, &content, &docRef, &chunkIdx, &metaJSON, &embBytes); err != nil {
+			continue
+		}
+
+		// Vector score
+		embedding := unpackEmbedding(embBytes)
+		vecScore := cosineSimilarity(query, embedding)
+
+		// BM25/FTS5 score
+		bm25Score := ftsResults[chunkID]
+
+		// Fuse scores
+		var fusedScore float64
+		if opts.Fusion != nil {
+			fusionInput := []map[string]float64{
+				{chunkID: vecScore},
+				ftsResults,
+			}
+			fusedMap := opts.Fusion.Fuse(fusionInput...)
+			fusedScore = fusedMap[chunkID]
+		} else {
+			alpha := opts.BM25Weight
+			if alpha == 0 {
+				fusedScore = vecScore
+			} else {
+				fusedScore = alpha*vecScore + (1-alpha)*bm25Score
+			}
+		}
+
+		if fusedScore > 0 {
+			chunk := &core.Chunk{
+				ID:          chunkID,
+				Content:     content,
+				DocumentRef: docRef,
+				ChunkIndex:  chunkIdx,
+				Metadata:    deserializeMetadata(string(metaJSON)),
+				Embedding:   embedding,
+			}
+			if !matchesFilters(fusedScore, chunk, opts.Filters) {
+				continue
+			}
+			results = append(results, fusedResult{chunk: chunk, score: fusedScore})
+		}
+	}
+
+	// Convert to index.SearchResult for sorting
+	searchResults := make([]index.SearchResult, len(results))
+	for i, r := range results {
+		searchResults[i] = index.SearchResult{Chunk: r.chunk, Score: r.score}
+	}
+	sortResultsByScore(searchResults)
+	if opts.TopK > 0 && len(searchResults) > opts.TopK {
+		searchResults = searchResults[:opts.TopK]
+	}
+	return searchResults, nil
 }
 
 // GetChunk returns a chunk by its ID.
@@ -519,9 +604,10 @@ func fuseScores(vecScoreMap, bm25Scores map[string]float64, vecResults []index.S
 		} else {
 			alpha := opts.BM25Weight
 			if alpha == 0 {
-				alpha = 0.5 // default
+				fusedScore = vecScore
+			} else {
+				fusedScore = alpha*vecScore + (1-alpha)*bm25Score
 			}
-			fusedScore = alpha*vecScore + (1-alpha)*bm25Score
 		}
 
 		if fusedScore > 0 {

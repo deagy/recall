@@ -7,8 +7,8 @@ import (
 	"github.com/deagy/recall/graph"
 )
 
-func TestTransitiveRule_Apply(t *testing.T) {
-	rule := &TransitiveRule{MinWeight: 0.5}
+func TestReverseRule_Apply(t *testing.T) {
+	rule := &ReverseRule{MinWeight: 0.5}
 
 	rel := graph.NewRelation("a", "b", "knows", 0.9)
 	inferred, ok := rule.Apply(rel)
@@ -20,6 +20,30 @@ func TestTransitiveRule_Apply(t *testing.T) {
 	}
 	if math.Abs(inferred.Weight-0.72) > 0.001 {
 		t.Fatalf("expected weight ~0.72, got %f", inferred.Weight)
+	}
+}
+
+func TestReverseRule_ApplyBelowMinWeight(t *testing.T) {
+	rule := &ReverseRule{MinWeight: 0.5}
+
+	rel := graph.NewRelation("a", "b", "knows", 0.3)
+	_, ok := rule.Apply(rel)
+	if ok {
+		t.Fatal("expected rule to not apply below min weight")
+	}
+}
+
+func TestTransitiveRule_Apply(t *testing.T) {
+	rule := &TransitiveRule{MinWeight: 0.5}
+
+	rel := graph.NewRelation("a", "b", "knows", 0.9)
+	inferred, ok := rule.Apply(rel)
+	if !ok {
+		t.Fatal("expected rule to apply")
+	}
+	// TransitiveRule returns the relation as-is for single-relation application
+	if inferred.From != "a" || inferred.To != "b" {
+		t.Fatalf("expected same relation, got %s -> %s", inferred.From, inferred.To)
 	}
 }
 
@@ -68,11 +92,11 @@ func TestAntiSymmetricRule_Apply(t *testing.T) {
 
 func TestDefaultRules(t *testing.T) {
 	rules := DefaultRules()
-	if len(rules) != 3 {
-		t.Fatalf("expected 3 default rules, got %d", len(rules))
+	if len(rules) != 4 {
+		t.Fatalf("expected 4 default rules, got %d", len(rules))
 	}
-	if rules[0].Name() != "transitive" {
-		t.Fatalf("expected first rule to be 'transitive', got '%s'", rules[0].Name())
+	if rules[0].Name() != "reverse" {
+		t.Fatalf("expected first rule to be 'reverse', got '%s'", rules[0].Name())
 	}
 }
 

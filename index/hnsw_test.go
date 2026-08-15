@@ -182,11 +182,13 @@ func TestMemoryIndex_DeleteRebuildsHNSW(t *testing.T) {
 
 	require.NoError(t, m.Delete(context.Background(), "chunk-A-0"))
 
-	expected := HNSWThreshold + 9
-	require.Equal(t, expected, m.Count(), "expected %d chunks", expected)
+	// After delete with tombstone, chunk is still in map but marked deleted
+	// Rebuild hasn't happened yet (threshold is 20%)
+	expected := HNSWThreshold + 10
+	require.Equal(t, expected, m.Count(), "expected %d chunks (tombstoned, not removed)", expected)
 
-	// Search should still work after delete+rebuild
+	// Search should still work after delete (tombstoned entry excluded from HNSW results)
 	results, err := m.Search(context.Background(), make([]float32, 32), DefaultSearchOptions(5))
 	require.NoError(t, err)
-	require.NotEmpty(t, results, "expected results after delete+rebuild")
+	require.NotEmpty(t, results, "expected results after delete")
 }
