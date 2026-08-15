@@ -1,0 +1,156 @@
+# Recall — Cline Rules
+
+## Project Overview
+Recall is a Go library for building Retrieval-Augmented Generation (RAG) applications. It provides structured storage, embedding-based similarity search, metadata filtering, document chunking, persistent SQLite storage, HNSW ANN indexing, RAG pipeline context assembly, knowledge graph, and multi-hop reasoning — all with zero CGO required.
+
+## Coding Standards
+
+### Go Conventions
+- **Module path**: `github.com/deagy/sdk/recall`
+- **Go version**: 1.26.5
+- **Style**: Follow `gofmt` and `go vet` strictly
+- **Errors**: Always check and return errors; never ignore them
+- **Interfaces**: Define interfaces at the caller's site (dependency inversion)
+- **Concurrency**: Use `sync.RWMutex` for read-heavy structures; prefer immutable data where possible
+
+### Package Structure
+```
+recall/
+├── core/           # Data types: Chunk, Document, Value, errors
+├── chunker/        # Text chunking: Fixed, Recursive strategies
+├── embedder/       # Embedding interface + Mock implementation
+├── index/          # Storage index: Memory (brute-force + HNSW), filters
+├── store/          # High-level store: Memory + SQLite backends, GraphStore
+├── pipeline/       # RAG pipeline: context assembly, templates, queries
+├── graph/          # Knowledge graph: entities, relations, traversal, inference
+├── reasoning/      # Multi-hop reasoning: inference rules, path exploration, confidence propagation
+├── bm25/           # BM25 keyword ranking function
+├── fuse/           # Score fusion: WeightedFusion, RRFFusion
+├── query/          # Query engine (planned)
+└── example/        # Usage examples
+```
+
+### Naming Conventions
+- **Packages**: lowercase, singular when possible (`graph`, not `graphs`)
+- **Types**: PascalCase (`KnowledgeGraph`, `SearchOptions`)
+- **Functions**: PascalCase for exported, camelCase for unexported
+- **Interfaces**: `-er` suffix when applicable (`Embedder`, `Store`, `GraphStore`)
+- **Tests**: `Test<FunctionName>` with `_test.go` suffix
+
+### Testing Standards
+- **Coverage target**: >80% for all packages
+- **Test names**: Describe the behavior being tested (`TestKnowledgeGraph_AddEntity`)
+- **Assertions**: Use `t.Fatalf` for critical failures, `t.Errorf` for non-fatal
+- **Benchmarks**: Include `Benchmark*` functions for performance-sensitive code
+- **Run tests**: `go test ./... -count=1` (disable cache for fresh results)
+
+### Dependencies
+- **Zero CGO** for core functionality
+- **SQLite**: Use `modernc.org/sqlite` (pure Go driver, no CGO)
+- **No external LLM dependencies** — embedders are dependency-injected
+- **Run `go mod tidy`** after adding any new dependencies
+
+## Architecture Patterns
+
+### Store Interface
+All store implementations must satisfy the `store.Store` interface:
+```go
+type Store interface {
+    Upload(ctx context.Context, doc *core.Document, content string) error
+    Search(ctx context.Context, query string, opts index.SearchOptions) ([]index.SearchResult, error)
+    SearchHybrid(ctx context.Context, query string, opts index.SearchOptions) ([]index.SearchResult, error)
+    GetChunk(id string) (*core.Chunk, bool)
+    DeleteChunk(id string) error
+    DeleteDocument(docID string) error
+    Count() int
+    Namespaces() []string
+    Close() error
+}
+```
+
+### GraphStore Interface
+Graph operations are accessed via `store.GraphStore`:
+```go
+type GraphStore interface {
+    ExtractEntities(ctx context.Context, text string, sourceChunkID string) ([]*graph.Entity, error)
+    ExtractRelations(ctx context.Context, text string, sourceChunkID string) ([]*graph.Relation, error)
+    GetEntity(id string) (*graph.Entity, bool)
+    FindPath(from, to string) *graph.Path
+    TransitiveClosure(entityID string) []*graph.Entity
+    // ... see store/graph_store.go
+}
+```
+
+### Reasoning Engine
+Multi-hop reasoning uses pluggable inference rules:
+```go
+type InferenceRule interface {
+    Name() string
+    Apply(rel *graph.Relation) (*graph.Relation, bool)
+}
+```
+Built-in rules: `TransitiveRule`, `SymmetricRule`, `AntiSymmetricRule`.
+
+## Development Workflow
+
+### Before Committing
+1. Run `go vet ./...` — no warnings
+2. Run `go test ./... -count=1` — all tests pass
+3. Run `gofmt -s -w .` — code is formatted
+4. Update `README.md` current status section
+5. Update `PLANNING.md` if scope changes
+
+### Commit Message Convention
+- `feat:` — new feature or phase completion
+- `docs:` — documentation changes
+- `test:` — test additions or fixes
+- `refactor:` — code restructuring without behavior change
+
+### Phase Completion Checklist
+- [ ] Implementation complete
+- [ ] Tests written and passing
+- [ ] README updated (features, status, architecture)
+- [ ] PLANNING.md updated if applicable
+- [ ] `go vet` and `go test` pass
+- [ ] Committed with conventional commit message
+
+## Important Constraints
+- **Never introduce CGO** in core packages
+- **Never hardcode API keys** or external service endpoints
+- **Always use context.Context** for long-running operations
+- **Always handle errors** — never use `_` for error returns
+- **Thread safety**: All shared state must be protected with mutexes
+- **No panics** in production code paths (only in tests with `t.Fatal`)
+
+## Common Tasks
+
+### Adding a New Phase
+1. Create package under `recall/` (e.g., `query/`)
+2. Define types and interfaces with doc comments
+3. Write tests alongside implementation (`*_test.go`)
+4. Update `README.md` Current Status section
+5. Update `README.md` Architecture diagram if new package
+6. Run `go test ./... -count=1` to verify
+7. Commit with `feat: Phase N — <description>`
+
+### Adding a New Dependency
+1. `go get <package>`
+2. `go mod tidy`
+3. Verify `go vet ./...` passes
+4. Verify `go test ./... -count=1` passes
+5. Commit the `go.mod`/`go.sum` changes
+
+### Running Tests
+```bash
+# All tests
+go test ./... -count=1
+
+# Specific package
+go test ./graph/ -v
+
+# With coverage
+go test ./... -count=1 -cover
+
+# Benchmarks
+go test ./index/ -bench=. -benchmem
+```
