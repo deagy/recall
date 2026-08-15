@@ -13,6 +13,7 @@ A Go library for building Retrieval-Augmented Generation (RAG) applications. Rec
 - **HNSW ANN Index** — Approximate nearest neighbor search for 100K+ chunks
 - **RAG Pipeline** — Context assembly, prompt templating, token management
 - **Knowledge Graph** — Entity/relation extraction, graph traversal (BFS/DFS), transitive closure, path finding, common-neighbor inference
+- **Multi-hop Reasoning** — Pluggable inference rules (transitive, symmetric, anti-symmetric), depth-limited path exploration, confidence propagation, natural language query → graph reasoning
 - **Multi-namespace** — Isolated knowledge spaces within a single store
 - **Zero CGO** — Pure Go standard library only for core; SQLite via pure Go driver
 
@@ -90,9 +91,10 @@ recall/
 ├── chunker/        # Text chunking: Fixed, Recursive strategies
 ├── embedder/       # Embedding interface + Mock implementation
 ├── index/          # Storage index: Memory (brute-force + HNSW), filters
-├── store/          # High-level store: Memory + SQLite backends
+├── store/          # High-level store: Memory + SQLite backends, GraphStore
 ├── pipeline/       # RAG pipeline: context assembly, templates, queries
 ├── graph/          # Knowledge graph: entities, relations, traversal, inference
+├── reasoning/      # Multi-hop reasoning: inference rules, path exploration, confidence propagation
 ├── bm25/           # BM25 keyword ranking function
 ├── fuse/           # Score fusion: WeightedFusion, RRFFusion
 ├── query/          # Query engine (planned)
@@ -121,7 +123,8 @@ recall/
 - [x] Phase 7: RAG pipeline (context assembly, prompt templates, token management)
 - [x] Phase 8: Knowledge graph (entity/relation extraction, BFS/DFS traversal, transitive closure, path finding, common-neighbor inference)
 - [x] Phase 9: Graph-based RAG (GraphStore interface, entity/relation extraction from text, graph-augmented retrieval)
-- [ ] Phase 10: Multi-hop reasoning engine (automated path generation, relationship inference chains)
+- [x] Phase 10: Multi-hop reasoning engine (inference rules, depth-limited path exploration, confidence propagation, natural language query reasoning)
+- [ ] Phase 11: Pluggable NER + relation pattern extraction
 
 ## Testing
 
