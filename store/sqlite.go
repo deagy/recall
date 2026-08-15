@@ -8,14 +8,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"sort"
 	"sync"
 	"time"
 
 	_ "modernc.org/sqlite"
 
 	"github.com/deagy/recall/bm25"
-	"github.com/deagy/recall/core"
 	"github.com/deagy/recall/chunker"
+	"github.com/deagy/recall/core"
 	"github.com/deagy/recall/embedder"
 	"github.com/deagy/recall/index"
 )
@@ -547,13 +548,7 @@ func fuseScores(vecScoreMap, bm25Scores map[string]float64, vecResults []index.S
 
 // sortResultsByScore sorts search results by score descending.
 func sortResultsByScore(results []index.SearchResult) {
-	for i := 1; i < len(results); i++ {
-		key := results[i]
-		j := i - 1
-		for j >= 0 && results[j].Score < key.Score {
-			results[j+1] = results[j]
-			j--
-		}
-		results[j+1] = key
-	}
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Score > results[j].Score
+	})
 }

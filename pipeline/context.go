@@ -12,9 +12,9 @@ import (
 
 // ContextWindow manages a collection of chunks within a token limit.
 type ContextWindow struct {
-	MaxTokens   int
+	MaxTokens     int
 	CurrentTokens int
-	Chunks      []core.Chunk
+	Chunks        []core.Chunk
 }
 
 // NewContextWindow creates a new context window with the given max token limit.

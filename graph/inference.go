@@ -12,7 +12,7 @@ import (
 
 // Path represents a sequence of entities connected by relations.
 type Path struct {
-	Entities []*Entity
+	Entities  []*Entity
 	Relations []*Relation
 }
 

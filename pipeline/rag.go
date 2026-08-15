@@ -27,10 +27,10 @@ type RAGResponse struct {
 
 // RAGPipeline is the main RAG pipeline that retrieves and assembles context.
 type RAGPipeline struct {
-	store           store.Store
-	template        *Template
-	topK            int
-	minScore        float64
+	store            store.Store
+	template         *Template
+	topK             int
+	minScore         float64
 	maxContextTokens int
 }
 

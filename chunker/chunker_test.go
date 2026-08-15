@@ -57,7 +57,7 @@ func TestFixedChunker_SmallContent(t *testing.T) {
 
 func TestFixedChunker_LargeContent(t *testing.T) {
 	cfg := DefaultConfig()
-	cfg.MaxTokens = 50  // small for testing
+	cfg.MaxTokens = 50 // small for testing
 	cfg.MinChunkSize = 10
 	cfg.OverlapTokens = 10
 	c := NewFixed(cfg)

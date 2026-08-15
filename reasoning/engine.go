@@ -11,8 +11,8 @@ import (
 
 // Engine provides multi-hop reasoning over the knowledge graph.
 type Engine struct {
-	graph   *graph.KnowledgeGraph
-	rules   []InferenceRule
+	graph    *graph.KnowledgeGraph
+	rules    []InferenceRule
 	maxDepth int
 }
 

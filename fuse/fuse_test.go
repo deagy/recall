@@ -2,7 +2,13 @@ package fuse
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
+
+// --- WeightedFusion tests ---
 
 func TestWeightedFusion_Basic(t *testing.T) {
 	f := NewWeightedFusion(0.7)
@@ -13,44 +19,36 @@ func TestWeightedFusion_Basic(t *testing.T) {
 	result := f.Fuse(s1, s2)
 
 	// a: 0.7*10 + 0.3*5 = 8.5
-	if result["a"] != 8.5 {
-		t.Errorf("expected 8.5 for 'a', got %f", result["a"])
-	}
+	assert.InDelta(t, 8.5, result["a"], 0.001, "a score")
 	// b: 0.7*20 + 0.3*15 = 18.5
-	if result["b"] != 18.5 {
-		t.Errorf("expected 18.5 for 'b', got %f", result["b"])
-	}
+	assert.InDelta(t, 18.5, result["b"], 0.001, "b score")
 	// c: 0.7*0 + 0.3*30 = 9.0
-	if result["c"] < 8.99 || result["c"] > 9.01 {
-		t.Errorf("expected ~9.0 for 'c', got %f", result["c"])
-	}
+	assert.InDelta(t, 9.0, result["c"], 0.01, "c score")
 }
 
 func TestWeightedFusion_PureVector(t *testing.T) {
 	f := NewWeightedFusion(1.0)
 	s1 := map[string]float64{"a": 10, "b": 20}
 	result := f.Fuse(s1)
-	if result["a"] != 10 || result["b"] != 20 {
-		t.Error("expected pure vector scores")
-	}
+	assert.InDelta(t, 10.0, result["a"], 0.001, "pure vector a")
+	assert.InDelta(t, 20.0, result["b"], 0.001, "pure vector b")
 }
 
 func TestWeightedFusion_PureBM25(t *testing.T) {
 	f := NewWeightedFusion(0.0)
 	s2 := map[string]float64{"a": 5, "b": 15}
 	result := f.Fuse(s2)
-	if result["a"] != 5 || result["b"] != 15 {
-		t.Error("expected pure BM25 scores")
-	}
+	assert.InDelta(t, 5.0, result["a"], 0.001, "pure BM25 a")
+	assert.InDelta(t, 15.0, result["b"], 0.001, "pure BM25 b")
 }
 
 func TestWeightedFusion_Empty(t *testing.T) {
 	f := NewWeightedFusion(0.5)
 	result := f.Fuse()
-	if len(result) != 0 {
-		t.Error("expected empty result")
-	}
+	assert.Empty(t, result, "expected empty result")
 }
+
+// --- RRF Fusion tests ---
 
 func TestRRFFusion_Basic(t *testing.T) {
 	f := NewRRFFusion(60)
@@ -63,43 +61,54 @@ func TestRRFFusion_Basic(t *testing.T) {
 	result := f.Fuse(s1, s2)
 
 	// a: 1/(60+1) = 1/61 ≈ 0.01639
-	if result["a"] < 0.016 || result["a"] > 0.017 {
-		t.Errorf("expected ~0.0164 for 'a', got %f", result["a"])
-	}
+	assert.InDelta(t, 1.0/61.0, result["a"], 0.001, "a RRF score")
 	// b: 1/(60+2) + 1/(60+1) = 1/62 + 1/61 ≈ 0.03279
-	if result["b"] < 0.032 || result["b"] > 0.033 {
-		t.Errorf("expected ~0.0328 for 'b', got %f", result["b"])
-	}
+	assert.InDelta(t, 1.0/62.0+1.0/61.0, result["b"], 0.001, "b RRF score")
 	// c: 1/(60+2) = 1/62 ≈ 0.01613
-	if result["c"] < 0.016 || result["c"] > 0.017 {
-		t.Errorf("expected ~0.0161 for 'c', got %f", result["c"])
-	}
+	assert.InDelta(t, 1.0/62.0, result["c"], 0.001, "c RRF score")
 }
 
 func TestRRFFusion_SingleMap(t *testing.T) {
 	f := NewRRFFusion(60)
 	s1 := map[string]float64{"x": 100, "y": 50}
 	result := f.Fuse(s1)
-	if len(result) != 2 {
-		t.Fatalf("expected 2 results, got %d", len(result))
-	}
+	require.Len(t, result, 2, "expected 2 results")
 	// x should have higher RRF score (rank 1)
-	if result["x"] <= result["y"] {
-		t.Error("expected x to rank higher than y")
-	}
+	assert.Greater(t, result["x"], result["y"], "x should rank higher than y")
 }
 
 func TestRRFFusion_Empty(t *testing.T) {
 	f := NewRRFFusion(60)
 	result := f.Fuse()
-	if len(result) != 0 {
-		t.Error("expected empty result")
-	}
+	assert.Empty(t, result, "expected empty result")
 }
 
 func TestRRFFusion_DefaultK(t *testing.T) {
 	f := NewRRFFusion(0) // Should default to 60
-	if f.K != 60 {
-		t.Errorf("expected default K=60, got %d", f.K)
-	}
+	assert.Equal(t, 60, f.K, "expected default K=60")
+}
+
+// --- Mockery-generated Fusion mock tests ---
+
+func TestMockFusion_Fuse(t *testing.T) {
+	m := new(MockFusion)
+	expected := map[string]float64{"a": 1.0, "b": 2.0}
+	m.On("Fuse", mock.Anything, mock.Anything).Return(expected)
+
+	s1 := map[string]float64{"a": 10}
+	s2 := map[string]float64{"b": 20}
+	result := m.Fuse(s1, s2)
+
+	assert.Equal(t, expected, result)
+	m.AssertExpectations(t)
+}
+
+func TestMockFusion_Fuse_Empty(t *testing.T) {
+	m := new(MockFusion)
+	expected := map[string]float64{}
+	m.On("Fuse").Return(expected)
+
+	result := m.Fuse()
+	assert.Empty(t, result)
+	m.AssertExpectations(t)
 }

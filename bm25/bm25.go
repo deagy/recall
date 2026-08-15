@@ -50,12 +50,16 @@ type BM25 struct {
 
 // New creates a new BM25 index.
 func New(cfg Config) *BM25 {
-	if cfg.K1 <= 0 { cfg.K1 = 1.2 }
-	if cfg.B < 0 { cfg.B = 0.75 }
+	if cfg.K1 <= 0 {
+		cfg.K1 = 1.2
+	}
+	if cfg.B < 0 {
+		cfg.B = 0.75
+	}
 	return &BM25{
 		k1Param: cfg.K1, bParam: cfg.B,
-		docLens: make(map[string]int),
-		docFreq: make(map[string]int),
+		docLens:  make(map[string]int),
+		docFreq:  make(map[string]int),
 		postings: make(map[string]map[string]int),
 	}
 }
@@ -70,14 +74,18 @@ func tokenize(content string) []string {
 		} else {
 			if cur.Len() > 0 {
 				w := cur.String()
-				if !stopWords[w] { tokens = append(tokens, w) }
+				if !stopWords[w] {
+					tokens = append(tokens, w)
+				}
 				cur.Reset()
 			}
 		}
 	}
 	if cur.Len() > 0 {
 		w := cur.String()
-		if !stopWords[w] { tokens = append(tokens, w) }
+		if !stopWords[w] {
+			tokens = append(tokens, w)
+		}
 	}
 	return tokens
 }

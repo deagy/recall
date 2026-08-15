@@ -13,8 +13,8 @@ import (
 func TestContextWindow_AddAndLimit(t *testing.T) {
 	cw := NewContextWindow(50)
 
-	chunk1 := core.Chunk{ID: "c1", Content: strings.Repeat("word ", 25)}  // ~125 chars / ~31 tokens
-	chunk2 := core.Chunk{ID: "c2", Content: strings.Repeat("word ", 25)}  // ~125 chars / ~31 tokens
+	chunk1 := core.Chunk{ID: "c1", Content: strings.Repeat("word ", 25)} // ~125 chars / ~31 tokens
+	chunk2 := core.Chunk{ID: "c2", Content: strings.Repeat("word ", 25)} // ~125 chars / ~31 tokens
 
 	if !cw.AddChunk(chunk1) {
 		t.Fatal("expected chunk1 to fit")
@@ -175,7 +175,7 @@ func TestRAGPipeline_Builders(t *testing.T) {
 // --- Mock Store for Testing ---
 
 type mockStore struct {
-	chunks []*core.Chunk
+	chunks   []*core.Chunk
 	embedder embedder.Embedder
 }
 

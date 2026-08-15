@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/deagy/recall/core"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func generateEmbeddings(n, dim int, seed int64) [][]float32 {
@@ -38,9 +40,7 @@ func TestHNSW_BasicSearch(t *testing.T) {
 
 	// Query should find neighbors
 	results := h.Search(embeddings[0], 30)
-	if len(results) == 0 {
-		t.Fatal("expected non-empty results")
-	}
+	require.NotEmpty(t, results, "expected non-empty results")
 }
 
 func TestHNSW_SimilarityOrdering(t *testing.T) {
@@ -62,9 +62,7 @@ func TestHNSW_SimilarityOrdering(t *testing.T) {
 	query := embeddings[0]
 	results := h.Search(query, 40)
 
-	if len(results) == 0 {
-		t.Fatal("expected results")
-	}
+	require.NotEmpty(t, results, "expected results")
 
 	// The query embedding itself should be in the top results
 	// (since it's the most similar to itself)
@@ -85,9 +83,7 @@ func TestHNSW_Empty(t *testing.T) {
 	h := NewHNSW(32, cfg)
 
 	results := h.Search([]float32{1, 2, 3}, 10)
-	if len(results) != 0 {
-		t.Fatalf("expected empty results, got %d", len(results))
-	}
+	assert.Empty(t, results, "expected empty results")
 }
 
 func TestHNSW_SingleNode(t *testing.T) {
@@ -98,9 +94,8 @@ func TestHNSW_SingleNode(t *testing.T) {
 	h.Add("solo", emb)
 
 	results := h.Search(emb, 10)
-	if len(results) != 1 || results[0] != "solo" {
-		t.Fatalf("expected [solo], got %v", results)
-	}
+	require.Len(t, results, 1, "expected [solo]")
+	assert.Equal(t, "solo", results[0], "expected solo result")
 }
 
 func TestHNSW_LargeDataset(t *testing.T) {
@@ -120,9 +115,7 @@ func TestHNSW_LargeDataset(t *testing.T) {
 
 	// Search should return results quickly
 	results := h.Search(embeddings[0], 50)
-	if len(results) == 0 {
-		t.Fatal("expected results from 2000-node index")
-	}
+	require.NotEmpty(t, results, "expected results from 2000-node index")
 }
 
 func TestMemoryIndex_HNSWAutoEnabled(t *testing.T) {
@@ -139,18 +132,12 @@ func TestMemoryIndex_HNSWAutoEnabled(t *testing.T) {
 			Content:   "test content",
 			Embedding: emb,
 		}
-		if err := m.Add(context.Background(), chunk); err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, m.Add(context.Background(), chunk))
 	}
 
 	results, err := m.Search(context.Background(), make([]float32, 32), DefaultSearchOptions(10))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(results) != 10 {
-		t.Fatalf("expected 10 results, got %d", len(results))
-	}
+	require.NoError(t, err)
+	require.Len(t, results, 10, "expected 10 results")
 }
 
 func TestMemoryIndex_HNSWUsedForLargeDataset(t *testing.T) {
@@ -167,22 +154,14 @@ func TestMemoryIndex_HNSWUsedForLargeDataset(t *testing.T) {
 			Content:   "test content",
 			Embedding: emb,
 		}
-		if err := m.Add(context.Background(), chunk); err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, m.Add(context.Background(), chunk))
 	}
 
-	if !m.hnswEnabled {
-		t.Fatal("expected HNSW to be enabled")
-	}
+	require.True(t, m.hnswEnabled, "expected HNSW to be enabled")
 
 	results, err := m.Search(context.Background(), make([]float32, 32), DefaultSearchOptions(5))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(results) == 0 {
-		t.Fatal("expected results from HNSW search")
-	}
+	require.NoError(t, err)
+	require.NotEmpty(t, results, "expected results from HNSW search")
 }
 
 func TestMemoryIndex_DeleteRebuildsHNSW(t *testing.T) {
@@ -198,26 +177,16 @@ func TestMemoryIndex_DeleteRebuildsHNSW(t *testing.T) {
 			Content:   "test content",
 			Embedding: emb,
 		}
-		if err := m.Add(context.Background(), chunk); err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, m.Add(context.Background(), chunk))
 	}
 
-	if err := m.Delete(context.Background(), "chunk-A-0"); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, m.Delete(context.Background(), "chunk-A-0"))
 
 	expected := HNSWThreshold + 9
-	if m.Count() != expected {
-		t.Fatalf("expected %d chunks, got %d", expected, m.Count())
-	}
+	require.Equal(t, expected, m.Count(), "expected %d chunks", expected)
 
 	// Search should still work after delete+rebuild
 	results, err := m.Search(context.Background(), make([]float32, 32), DefaultSearchOptions(5))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(results) == 0 {
-		t.Fatal("expected results after delete+rebuild")
-	}
+	require.NoError(t, err)
+	require.NotEmpty(t, results, "expected results after delete+rebuild")
 }

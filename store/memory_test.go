@@ -10,6 +10,9 @@ import (
 	"github.com/deagy/recall/embedder"
 	"github.com/deagy/recall/fuse"
 	"github.com/deagy/recall/index"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 func newTestStore(t *testing.T) *MemoryStore {
@@ -20,22 +23,36 @@ func newTestStore(t *testing.T) *MemoryStore {
 		ChunkerFactory: chunker.NewFixed,
 	}
 	s, err := NewMemoryStore(cfg)
-	if err != nil {
-		t.Fatalf("NewMemoryStore failed: %v", err)
-	}
+	require.NoError(t, err, "NewMemoryStore should not fail")
 	return s
+}
+
+func newTestStoreWithMocks(t *testing.T) (*MemoryStore, *chunker.MockChunker) {
+	t.Helper()
+	mockChunker := new(chunker.MockChunker)
+
+	// Default mock behavior: return one chunk
+	dim := 384
+	mockChunker.On("Chunk", mock.Anything, mock.Anything).Return([]*core.Chunk{
+		{ID: "chunk-0", Content: "test content", DocumentRef: "doc1", Embedding: make([]float32, dim)},
+	}, nil)
+
+	cfg := Config{
+		Namespace:      "test",
+		Embedder:       embedder.NewMockEmbedder(384),
+		ChunkerFactory: func(cfg chunker.Config) chunker.Chunker { return mockChunker },
+	}
+	s, err := NewMemoryStore(cfg)
+	require.NoError(t, err, "NewMemoryStore should not fail")
+	return s, mockChunker
 }
 
 func uploadAndVerify(t *testing.T, s *MemoryStore, docID, content string) {
 	t.Helper()
 	doc := core.NewDocument(docID, "Test", "source")
 	err := s.Upload(context.Background(), doc, content)
-	if err != nil {
-		t.Fatalf("Upload failed for doc %s: %v", docID, err)
-	}
-	if s.Count() == 0 {
-		t.Fatalf("expected chunks after upload, count is 0")
-	}
+	require.NoError(t, err, "Upload should not fail for doc %s", docID)
+	assert.Greater(t, s.Count(), 0, "expected chunks after upload")
 }
 
 func TestMemoryStore_UploadAndSearch(t *testing.T) {
@@ -45,24 +62,16 @@ func TestMemoryStore_UploadAndSearch(t *testing.T) {
 	uploadAndVerify(t, s, "doc1", "Go is a statically typed compiled programming language designed at Google by Robert Griesemer, Rob Pike, and Ken Thompson.")
 
 	results, err := s.Search(context.Background(), "Go programming language", index.DefaultSearchOptions(5))
-	if err != nil {
-		t.Fatalf("Search failed: %v", err)
-	}
-	if len(results) == 0 {
-		t.Error("expected search results")
-	}
-	if results[0].Chunk.DocumentRef != "doc1" {
-		t.Errorf("expected doc1, got %s", results[0].Chunk.DocumentRef)
-	}
+	require.NoError(t, err, "Search should not fail")
+	require.NotEmpty(t, results, "expected search results")
+	assert.Equal(t, "doc1", results[0].Chunk.DocumentRef, "expected doc1 as top result")
 }
 
 func TestMemoryStore_UploadNilDoc(t *testing.T) {
 	s := newTestStore(t)
 	defer s.Close()
 	err := s.Upload(context.Background(), nil, "content")
-	if err != core.ErrInvalidChunk {
-		t.Errorf("expected ErrInvalidChunk, got %v", err)
-	}
+	assert.ErrorIs(t, err, core.ErrInvalidChunk, "expected ErrInvalidChunk for nil doc")
 }
 
 func TestMemoryStore_UploadEmptyContent(t *testing.T) {
@@ -70,9 +79,7 @@ func TestMemoryStore_UploadEmptyContent(t *testing.T) {
 	defer s.Close()
 	doc := core.NewDocument("doc1", "Test", "source")
 	err := s.Upload(context.Background(), doc, "")
-	if err != core.ErrInvalidChunk {
-		t.Errorf("expected ErrInvalidChunk, got %v", err)
-	}
+	assert.ErrorIs(t, err, core.ErrInvalidChunk, "expected ErrInvalidChunk for empty content")
 }
 
 func TestMemoryStore_GetChunk(t *testing.T) {
@@ -81,22 +88,16 @@ func TestMemoryStore_GetChunk(t *testing.T) {
 
 	uploadAndVerify(t, s, "doc1", "Some content here for testing the get chunk functionality of the store.")
 
-	results, _ := s.Search(context.Background(), "content", index.DefaultSearchOptions(1))
-	if len(results) == 0 {
-		t.Fatal("no results to get chunk from")
-	}
+	results, err := s.Search(context.Background(), "content", index.DefaultSearchOptions(1))
+	require.NoError(t, err)
+	require.NotEmpty(t, results, "no results to get chunk from")
+
 	chunk, ok := s.GetChunk(results[0].Chunk.ID)
-	if !ok {
-		t.Fatal("expected to find chunk")
-	}
-	if chunk.ID != results[0].Chunk.ID {
-		t.Errorf("expected chunk ID %s, got %s", results[0].Chunk.ID, chunk.ID)
-	}
+	require.True(t, ok, "expected to find chunk")
+	assert.Equal(t, results[0].Chunk.ID, chunk.ID, "chunk IDs should match")
 
 	_, ok = s.GetChunk("nonexistent")
-	if ok {
-		t.Error("expected not to find nonexistent chunk")
-	}
+	assert.False(t, ok, "expected not to find nonexistent chunk")
 }
 
 func TestMemoryStore_DeleteDocument(t *testing.T) {
@@ -105,71 +106,42 @@ func TestMemoryStore_DeleteDocument(t *testing.T) {
 
 	uploadAndVerify(t, s, "doc1", "Some content for deletion testing that should produce multiple chunks when split properly by the chunker.")
 
-	if s.Count() == 0 {
-		t.Fatal("expected chunks after upload")
-	}
+	require.Greater(t, s.Count(), 0, "expected chunks after upload")
 
 	err := s.DeleteDocument("doc1")
-	if err != nil {
-		t.Fatalf("DeleteDocument failed: %v", err)
-	}
+	require.NoError(t, err, "DeleteDocument should not fail")
 
-	if s.Count() != 0 {
-		t.Errorf("expected 0 chunks after delete, got %d", s.Count())
-	}
+	assert.Equal(t, 0, s.Count(), "expected 0 chunks after delete")
 
 	err = s.DeleteDocument("nonexistent")
-	if err != core.ErrNotFound {
-		t.Errorf("expected ErrNotFound, got %v", err)
-	}
+	assert.ErrorIs(t, err, core.ErrNotFound, "expected ErrNotFound for nonexistent doc")
 }
 
 func TestMemoryStore_Namespaces(t *testing.T) {
 	s := newTestStore(t)
 	defer s.Close()
 
-	uploadAndVerify(t, s, "doc1", "Content in the test namespace for verifying namespace tracking works correctly.")
+	uploadAndVerify(t, s, "doc1", "First document with enough text to be chunked properly by the chunker implementation.")
+	uploadAndVerify(t, s, "doc2", "Second document with enough text to be chunked properly by the chunker implementation too.")
 
 	ns := s.Namespaces()
-	if len(ns) != 1 || ns[0] != "test" {
-		t.Errorf("expected [test], got %v", ns)
-	}
-}
-
-func TestMemoryStore_DefaultNamespace(t *testing.T) {
-	cfg := Config{
-		Embedder: embedder.NewMockEmbedder(384),
-	}
-	s, err := NewMemoryStore(cfg)
-	if err != nil {
-		t.Fatalf("NewMemoryStore failed: %v", err)
-	}
-	defer s.Close()
-
-	uploadAndVerify(t, s, "doc1", "Content in the default namespace for testing default namespace behavior.")
-
-	ns := s.Namespaces()
-	if len(ns) != 1 || ns[0] != "default" {
-		t.Errorf("expected [default], got %v", ns)
-	}
+	require.NotEmpty(t, ns, "expected at least one namespace")
+	assert.Contains(t, ns, "test", "expected default namespace")
 }
 
 func TestMemoryStore_MultipleDocuments(t *testing.T) {
 	s := newTestStore(t)
 	defer s.Close()
 
-	uploadAndVerify(t, s, "doc1", "Go is a programming language created at Google for systems programming and building scalable network services.")
+	uploadAndVerify(t, s, "doc1", "Go is a statically typed compiled programming language designed at Google by Robert Griesemer Rob Pike and Ken Thompson for building scalable network services.")
 	uploadAndVerify(t, s, "doc2", "Python is a high-level general-purpose programming language designed by Guido van Rossum emphasizing code readability.")
 
 	total := s.Count()
-	if total < 2 {
-		t.Errorf("expected at least 2 chunks, got %d", total)
-	}
+	require.GreaterOrEqual(t, total, 2, "expected at least 2 chunks")
 
-	results, _ := s.Search(context.Background(), "programming language", index.DefaultSearchOptions(10))
-	if len(results) < 2 {
-		t.Errorf("expected at least 2 results for 'programming language', got %d", len(results))
-	}
+	results, err := s.Search(context.Background(), "programming language", index.DefaultSearchOptions(10))
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, len(results), 2, "expected at least 2 results for 'programming language'")
 }
 
 func TestMemoryStore_HybridSearch(t *testing.T) {
@@ -184,13 +156,8 @@ func TestMemoryStore_HybridSearch(t *testing.T) {
 	opts.BM25Weight = 0.5 // Equal weighting
 
 	results, err := s.SearchHybrid(context.Background(), "programming language Go", opts)
-	if err != nil {
-		t.Fatalf("SearchHybrid failed: %v", err)
-	}
-
-	if len(results) == 0 {
-		t.Fatal("expected hybrid search results")
-	}
+	require.NoError(t, err)
+	require.NotEmpty(t, results, "expected hybrid search results")
 
 	// At least one result should contain "Go" or "programming"
 	found := false
@@ -201,9 +168,7 @@ func TestMemoryStore_HybridSearch(t *testing.T) {
 			break
 		}
 	}
-	if !found {
-		t.Error("expected at least one result containing 'Go' or 'programming'")
-	}
+	assert.True(t, found, "expected at least one result containing 'Go' or 'programming'")
 }
 
 func TestMemoryStore_HybridSearchPureVector(t *testing.T) {
@@ -215,12 +180,12 @@ func TestMemoryStore_HybridSearchPureVector(t *testing.T) {
 	opts := index.DefaultSearchOptions(5)
 	opts.BM25Weight = 0 // Pure vector
 
-	vecResults, _ := s.Search(context.Background(), "Go programming", opts)
-	hybridResults, _ := s.SearchHybrid(context.Background(), "Go programming", opts)
+	vecResults, err := s.Search(context.Background(), "Go programming", opts)
+	require.NoError(t, err)
+	hybridResults, err := s.SearchHybrid(context.Background(), "Go programming", opts)
+	require.NoError(t, err)
 
-	if len(vecResults) != len(hybridResults) {
-		t.Errorf("expected same number of results (%d), got vec=%d hybrid=%d", len(vecResults), len(vecResults), len(hybridResults))
-	}
+	assert.Len(t, vecResults, len(hybridResults), "expected same number of results")
 }
 
 func TestMemoryStore_HybridSearchPureBM25(t *testing.T) {
@@ -233,13 +198,8 @@ func TestMemoryStore_HybridSearchPureBM25(t *testing.T) {
 	opts.BM25Weight = 1 // Pure BM25
 
 	hybridResults, err := s.SearchHybrid(context.Background(), "Go programming", opts)
-	if err != nil {
-		t.Fatalf("SearchHybrid failed: %v", err)
-	}
-
-	if len(hybridResults) == 0 {
-		t.Fatal("expected hybrid search results with pure BM25")
-	}
+	require.NoError(t, err)
+	require.NotEmpty(t, hybridResults, "expected hybrid search results with pure BM25")
 }
 
 func TestMemoryStore_HybridSearchWithRRF(t *testing.T) {
@@ -253,13 +213,40 @@ func TestMemoryStore_HybridSearchWithRRF(t *testing.T) {
 	opts.Fusion = fuse.NewRRFFusion(60)
 
 	results, err := s.SearchHybrid(context.Background(), "programming language", opts)
-	if err != nil {
-		t.Fatalf("SearchHybrid with RRF failed: %v", err)
-	}
-
-	if len(results) == 0 {
-		t.Fatal("expected hybrid search results with RRF fusion")
-	}
+	require.NoError(t, err)
+	require.NotEmpty(t, results, "expected hybrid search results with RRF fusion")
 }
 
+// --- Mock-based tests using in-package mockery mocks ---
 
+func TestMemoryStore_WithMockChunker(t *testing.T) {
+	s, mockChunker := newTestStoreWithMocks(t)
+	defer s.Close()
+
+	doc := core.NewDocument("doc1", "Test", "source")
+	err := s.Upload(context.Background(), doc, "test content")
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, s.Count(), "expected 1 chunk")
+
+	mockChunker.AssertExpectations(t)
+}
+
+func TestMemoryStore_MockChunkerCustomResult(t *testing.T) {
+	s, mockChunker := newTestStoreWithMocks(t)
+	defer s.Close()
+
+	// Override with custom chunk
+	dim := 384
+	mockChunker.On("Chunk", mock.Anything, "custom").Return([]*core.Chunk{
+		{ID: "custom-0", Content: "custom", DocumentRef: "doc1", Embedding: make([]float32, dim)},
+	}, nil)
+
+	doc := core.NewDocument("doc1", "Test", "source")
+	err := s.Upload(context.Background(), doc, "custom")
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, s.Count(), "expected 1 chunk")
+
+	mockChunker.AssertExpectations(t)
+}

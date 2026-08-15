@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/deagy/recall/core"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func makeTestChunks(dim int) []*core.Chunk {
@@ -55,31 +57,23 @@ func TestMemoryIndex_AddAndCount(t *testing.T) {
 	idx := NewMemoryIndex("test", 3)
 	chunks := makeTestChunks(3)
 	for _, c := range chunks {
-		if err := idx.Add(context.Background(), c); err != nil {
-			t.Fatalf("Add failed: %v", err)
-		}
+		require.NoError(t, idx.Add(context.Background(), c), "Add should not fail")
 	}
-	if idx.Count() != 3 {
-		t.Errorf("expected count 3, got %d", idx.Count())
-	}
+	assert.Equal(t, 3, idx.Count(), "expected count 3")
 }
 
 func TestMemoryIndex_AddInvalidEmbedding(t *testing.T) {
 	idx := NewMemoryIndex("test", 3)
 	chunk := &core.Chunk{ID: "c1", Content: "test", Embedding: nil}
 	err := idx.Add(context.Background(), chunk)
-	if err != core.ErrInvalidEmbedding {
-		t.Errorf("expected ErrInvalidEmbedding, got %v", err)
-	}
+	assert.ErrorIs(t, err, core.ErrInvalidEmbedding, "expected ErrInvalidEmbedding")
 }
 
 func TestMemoryIndex_AddEmbeddingMismatch(t *testing.T) {
 	idx := NewMemoryIndex("test", 3)
 	chunk := &core.Chunk{ID: "c1", Content: "test", Embedding: []float32{1, 2}}
 	err := idx.Add(context.Background(), chunk)
-	if err != core.ErrEmbeddingMismatch {
-		t.Errorf("expected ErrEmbeddingMismatch, got %v", err)
-	}
+	assert.ErrorIs(t, err, core.ErrEmbeddingMismatch, "expected ErrEmbeddingMismatch")
 }
 
 func TestMemoryIndex_Search(t *testing.T) {
@@ -88,19 +82,11 @@ func TestMemoryIndex_Search(t *testing.T) {
 		_ = idx.Add(context.Background(), c)
 	}
 	results, err := idx.Search(context.Background(), []float32{1, 0, 0}, SearchOptions{TopK: 3})
-	if err != nil {
-		t.Fatalf("Search failed: %v", err)
-	}
-	if len(results) != 3 {
-		t.Fatalf("expected 3 results, got %d", len(results))
-	}
-	if results[0].Chunk.ID != "c1" {
-		t.Errorf("expected first result c1, got %s", results[0].Chunk.ID)
-	}
+	require.NoError(t, err)
+	require.Len(t, results, 3, "expected 3 results")
+	assert.Equal(t, "c1", results[0].Chunk.ID, "expected first result c1")
 	for i := 1; i < len(results); i++ {
-		if results[i].Score > results[i-1].Score {
-			t.Errorf("results not sorted descending at index %d", i)
-		}
+		assert.GreaterOrEqual(t, results[i-1].Score, results[i].Score, "results should be sorted descending")
 	}
 }
 
@@ -113,15 +99,9 @@ func TestMemoryIndex_SearchWithFilters(t *testing.T) {
 	results, err := idx.Search(context.Background(), []float32{1, 0, 0}, SearchOptions{
 		TopK: 10, Filters: []Filter{filter},
 	})
-	if err != nil {
-		t.Fatalf("Search failed: %v", err)
-	}
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
-	}
-	if results[0].Chunk.ID != "c1" {
-		t.Errorf("expected c1, got %s", results[0].Chunk.ID)
-	}
+	require.NoError(t, err)
+	require.Len(t, results, 1, "expected 1 result")
+	assert.Equal(t, "c1", results[0].Chunk.ID, "expected c1")
 }
 
 func TestMemoryIndex_SearchTermInFilter(t *testing.T) {
@@ -133,12 +113,8 @@ func TestMemoryIndex_SearchTermInFilter(t *testing.T) {
 	results, err := idx.Search(context.Background(), []float32{1, 0, 0}, SearchOptions{
 		TopK: 10, Filters: []Filter{filter},
 	})
-	if err != nil {
-		t.Fatalf("Search failed: %v", err)
-	}
-	if len(results) != 2 {
-		t.Fatalf("expected 2 results, got %d", len(results))
-	}
+	require.NoError(t, err)
+	require.Len(t, results, 2, "expected 2 results")
 }
 
 func TestMemoryIndex_Delete(t *testing.T) {
@@ -146,28 +122,18 @@ func TestMemoryIndex_Delete(t *testing.T) {
 	for _, c := range makeTestChunks(3) {
 		_ = idx.Add(context.Background(), c)
 	}
-	if err := idx.Delete(context.Background(), "c2"); err != nil {
-		t.Fatalf("Delete failed: %v", err)
-	}
-	if idx.Count() != 2 {
-		t.Errorf("expected count 2, got %d", idx.Count())
-	}
+	require.NoError(t, idx.Delete(context.Background(), "c2"), "Delete should not fail")
+	assert.Equal(t, 2, idx.Count(), "expected count 2")
 	results, _ := idx.Search(context.Background(), []float32{0, 1, 0}, SearchOptions{TopK: 10})
 	for _, r := range results {
-		if r.Chunk.ID == "c2" {
-			t.Error("deleted chunk should not appear")
-		}
+		assert.NotEqual(t, "c2", r.Chunk.ID, "deleted chunk should not appear")
 	}
 }
 
 func TestMemoryIndex_AddBatch(t *testing.T) {
 	idx := NewMemoryIndex("test", 3)
-	if err := idx.AddBatch(context.Background(), makeTestChunks(3)); err != nil {
-		t.Fatalf("AddBatch failed: %v", err)
-	}
-	if idx.Count() != 3 {
-		t.Errorf("expected count 3, got %d", idx.Count())
-	}
+	require.NoError(t, idx.AddBatch(context.Background(), makeTestChunks(3)), "AddBatch should not fail")
+	assert.Equal(t, 3, idx.Count(), "expected count 3")
 }
 
 func TestMemoryIndex_GetChunk(t *testing.T) {
@@ -176,26 +142,16 @@ func TestMemoryIndex_GetChunk(t *testing.T) {
 		_ = idx.Add(context.Background(), c)
 	}
 	c, ok := idx.GetChunk("c1")
-	if !ok {
-		t.Fatal("expected to find c1")
-	}
-	if c.Content != "Go programming language" {
-		t.Errorf("unexpected content: %s", c.Content)
-	}
+	require.True(t, ok, "expected to find c1")
+	assert.Equal(t, "Go programming language", c.Content, "content should match")
 	_, ok = idx.GetChunk("nonexistent")
-	if ok {
-		t.Error("expected not to find nonexistent")
-	}
+	assert.False(t, ok, "expected not to find nonexistent")
 }
 
 func TestMemoryIndex_NamespaceAndDimension(t *testing.T) {
 	idx := NewMemoryIndex("myns", 1536)
-	if idx.Namespace() != "myns" {
-		t.Errorf("expected namespace 'myns', got %q", idx.Namespace())
-	}
-	if idx.Dimension() != 1536 {
-		t.Errorf("expected dimension 1536, got %d", idx.Dimension())
-	}
+	assert.Equal(t, "myns", idx.Namespace(), "namespace should match")
+	assert.Equal(t, 1536, idx.Dimension(), "dimension should match")
 }
 
 func TestMemoryIndex_MinScoreFilter(t *testing.T) {
@@ -206,13 +162,7 @@ func TestMemoryIndex_MinScoreFilter(t *testing.T) {
 	results, err := idx.Search(context.Background(), []float32{1, 0, 0}, SearchOptions{
 		TopK: 10, MinScore: 0.9,
 	})
-	if err != nil {
-		t.Fatalf("Search failed: %v", err)
-	}
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result with MinScore 0.9, got %d", len(results))
-	}
-	if results[0].Chunk.ID != "c1" {
-		t.Errorf("expected c1, got %s", results[0].Chunk.ID)
-	}
+	require.NoError(t, err)
+	require.Len(t, results, 1, "expected 1 result with MinScore 0.9")
+	assert.Equal(t, "c1", results[0].Chunk.ID, "expected c1")
 }

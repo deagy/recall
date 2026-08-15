@@ -12,19 +12,19 @@ import (
 // KnowledgeGraph stores entities and their relationships, supporting
 // traversal, querying, and inference operations.
 type KnowledgeGraph struct {
-	mu         sync.RWMutex
-	entities   map[string]*Entity
-	relations  []*Relation
-	outEdges   map[string][]*Relation // from -> relations
-	inEdges    map[string][]*Relation // to -> relations
+	mu        sync.RWMutex
+	entities  map[string]*Entity
+	relations []*Relation
+	outEdges  map[string][]*Relation // from -> relations
+	inEdges   map[string][]*Relation // to -> relations
 }
 
 // NewKnowledgeGraph creates a new empty knowledge graph.
 func NewKnowledgeGraph() *KnowledgeGraph {
 	return &KnowledgeGraph{
-		entities:  make(map[string]*Entity),
-		outEdges:  make(map[string][]*Relation),
-		inEdges:   make(map[string][]*Relation),
+		entities: make(map[string]*Entity),
+		outEdges: make(map[string][]*Relation),
+		inEdges:  make(map[string][]*Relation),
 	}
 }
 

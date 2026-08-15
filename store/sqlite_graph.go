@@ -22,8 +22,8 @@ type GraphPersistence interface {
 
 // SQLiteGraphStore persists a knowledge graph to SQLite.
 type SQLiteGraphStore struct {
-	mu   sync.RWMutex
-	db   *sql.DB
+	mu    sync.RWMutex
+	db    *sql.DB
 	graph *graph.KnowledgeGraph
 }
 
@@ -158,11 +158,11 @@ func (s *SQLiteGraphStore) LoadFromDB() error {
 			json.Unmarshal([]byte(propsJSON), &props)
 		}
 		s.graph.AddRelation(&graph.Relation{
-			From:         fromID,
-			To:           toID,
-			Type:         relType,
-			Weight:       weight,
-			Properties:   props,
+			From:       fromID,
+			To:         toID,
+			Type:       relType,
+			Weight:     weight,
+			Properties: props,
 		})
 	}
 

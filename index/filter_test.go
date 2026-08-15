@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/deagy/recall/core"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestTermFilter_Match(t *testing.T) {
@@ -15,14 +16,10 @@ func TestTermFilter_Match(t *testing.T) {
 	}
 
 	f := &TermFilter{Key: "source", Value: "test.txt"}
-	if !f.Match(chunk) {
-		t.Error("expected match")
-	}
+	assert.True(t, f.Match(chunk), "expected match")
 
 	f2 := &TermFilter{Key: "source", Value: "other.txt"}
-	if f2.Match(chunk) {
-		t.Error("expected no match")
-	}
+	assert.False(t, f2.Match(chunk), "expected no match")
 }
 
 func TestTermInFilter_Match(t *testing.T) {
@@ -33,14 +30,10 @@ func TestTermInFilter_Match(t *testing.T) {
 	}
 
 	f := &TermInFilter{Key: "tag", Values: []string{"go", "rust"}}
-	if !f.Match(chunk) {
-		t.Error("expected match")
-	}
+	assert.True(t, f.Match(chunk), "expected match")
 
 	f2 := &TermInFilter{Key: "tag", Values: []string{"python", "java"}}
-	if f2.Match(chunk) {
-		t.Error("expected no match")
-	}
+	assert.False(t, f2.Match(chunk), "expected no match")
 }
 
 func TestRangeFilter_Match(t *testing.T) {
@@ -54,20 +47,14 @@ func TestRangeFilter_Match(t *testing.T) {
 	max := 50.0
 
 	f := &RangeFilter{Key: "score", Min: &min, Max: &max, MinIncl: true, MaxIncl: true}
-	if !f.Match(chunk) {
-		t.Error("expected match (42 in [10, 50])")
-	}
+	assert.True(t, f.Match(chunk), "expected match (42 in [10, 50])")
 
 	f2 := &RangeFilter{Key: "score", Min: &min, Max: &max, MinIncl: false, MaxIncl: false}
-	if !f2.Match(chunk) {
-		t.Error("expected match (42 in (10, 50))")
-	}
+	assert.True(t, f2.Match(chunk), "expected match (42 in (10, 50))")
 
 	// Value at boundary with exclusive min - 42 > 10, so it matches
 	f3 := &RangeFilter{Key: "score", Min: &min, MinIncl: false}
-	if !f3.Match(chunk) {
-		t.Error("expected match (42 > 10 with exclusive min)")
-	}
+	assert.True(t, f3.Match(chunk), "expected match (42 > 10 with exclusive min)")
 
 	// Value at min boundary with exclusive min - 10 is not > 10
 	valAtMin := 10.0
@@ -75,15 +62,11 @@ func TestRangeFilter_Match(t *testing.T) {
 		Metadata: map[string]core.Value{"score": core.Number{Value: valAtMin}},
 	}
 	f4 := &RangeFilter{Key: "score", Min: &min, MinIncl: false}
-	if f4.Match(chunkAtMin) {
-		t.Error("expected no match (10 not > 10 with exclusive min)")
-	}
+	assert.False(t, f4.Match(chunkAtMin), "expected no match (10 not > 10 with exclusive min)")
 
 	// Missing key
 	f5 := &RangeFilter{Key: "missing", Min: &min}
-	if f5.Match(chunk) {
-		t.Error("expected no match for missing key")
-	}
+	assert.False(t, f5.Match(chunk), "expected no match for missing key")
 
 	// Non-numeric value
 	chunk2 := &core.Chunk{
@@ -91,9 +74,7 @@ func TestRangeFilter_Match(t *testing.T) {
 			"score": core.String{Value: "not-a-number"},
 		},
 	}
-	if f.Match(chunk2) {
-		t.Error("expected no match for non-numeric value")
-	}
+	assert.False(t, f.Match(chunk2), "expected no match for non-numeric value")
 }
 
 func TestDateRangeFilter_Match(t *testing.T) {
@@ -109,14 +90,10 @@ func TestDateRangeFilter_Match(t *testing.T) {
 	max := now.Add(time.Hour)
 
 	f := &DateRangeFilter{Key: "date", Min: &min, Max: &max, MinIncl: true, MaxIncl: true}
-	if !f.Match(chunk) {
-		t.Error("expected match")
-	}
+	assert.True(t, f.Match(chunk), "expected match")
 
 	minFar := now.Add(-24 * time.Hour)
 	maxFar := now.Add(-12 * time.Hour)
 	f2 := &DateRangeFilter{Key: "date", Min: &minFar, Max: &maxFar}
-	if f2.Match(chunk) {
-		t.Error("expected no match")
-	}
+	assert.False(t, f2.Match(chunk), "expected no match")
 }

@@ -2,7 +2,10 @@
 // Users inject their preferred embedding implementation (OpenAI, local model, mock, etc.).
 package embedder
 
-import "context"
+import (
+	"context"
+	"math"
+)
 
 // Embedder defines the interface for converting text into vector embeddings.
 type Embedder interface {
@@ -41,7 +44,7 @@ func (m *MockEmbedder) Embed(ctx context.Context, text string) ([]float32, error
 	}
 	for i := range vec {
 		hash = hash*31 + uint32(i)
-		vec[i] = float32(int32(hash>>16))/32768.0
+		vec[i] = float32(int32(hash>>16)) / 32768.0
 	}
 	// Normalize
 	normalize(vec)
@@ -75,7 +78,7 @@ func normalize(v []float32) {
 	if sum == 0 {
 		return
 	}
-	norm := float32(1.0 / sqrt(float64(sum)))
+	norm := float32(1.0 / math.Sqrt(float64(sum)))
 	for i := range v {
 		v[i] *= norm
 	}
@@ -95,17 +98,5 @@ func CosineSimilarity(a, b []float32) float64 {
 	if normA == 0 || normB == 0 {
 		return 0
 	}
-	return dot / (sqrt(normA) * sqrt(normB))
-}
-
-// sqrt is a simple square root function for float64.
-func sqrt(x float64) float64 {
-	if x <= 0 {
-		return 0
-	}
-	z := x / 2
-	for i := 0; i < 20; i++ {
-		z -= (z*z - x) / (2 * z)
-	}
-	return z
+	return dot / (math.Sqrt(normA) * math.Sqrt(normB))
 }
