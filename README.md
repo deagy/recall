@@ -125,6 +125,7 @@ recall/
 - [x] Phase 9: Graph-based RAG (GraphStore interface, entity/relation extraction from text, graph-augmented retrieval)
 - [x] Phase 10: Multi-hop reasoning engine (inference rules, depth-limited path exploration, confidence propagation, natural language query reasoning)
 - [x] Phase 13: Advanced query processing (intent detection, entity extraction, query expansion, adaptive retrieval)
+- [x] Phase 14: LLM integration (pluggable backends, streaming, LLM-assisted extraction)
 - [x] Phase 11: Pluggable NER + relation pattern extraction (HeuristicNER with stopword filtering, PatternRelationExtractor)
 - [x] Phase 12: Performance & robustness (context cancellation, SQLite HNSW mirroring, entity extraction heuristics)
 
@@ -140,6 +141,52 @@ MIT
 
 ## Advanced Usage
 
+### LLM Integration
+
+```go
+import (
+    "github.com/deagy/recall/llm"
+)
+
+// Use OpenAI backend
+client := llm.NewOpenAIClient("your-api-key", "")
+
+// Or use Ollama for local models
+// client := llm.NewOllamaClient("http://localhost:11434")
+
+// Send a chat request
+resp, err := client.Chat(ctx, &llm.ChatRequest{
+    Messages: []llm.Message{
+        {Role: "system", Content: "You are a helpful assistant."},
+        {Role: "user", Content: "What is Go programming language?"},
+    },
+    Model:     "gpt-4",
+    MaxTokens: 1000,
+})
+if err != nil {
+    log.Fatal(err)
+}
+
+fmt.Println(resp.Message.Content)
+
+// Use streaming
+client.ChatStream(ctx, &llm.ChatRequest{
+    Messages: []llm.Message{
+        {Role: "user", Content: "Tell me about Go"},
+    },
+    Stream: true,
+}, func(chunk *llm.StreamChunk) error {
+    fmt.Print(chunk.Delta.Content)
+    return nil
+})
+
+// Extract entities using LLM
+extractor := llm.NewLLMExtractor(client, "gpt-4")
+entities, err := extractor.ExtractEntities(ctx, "Go was created by Google in 2007", "chunk-1")
+if err != nil {
+    log.Fatal(err)
+}
+```
 ### Advanced Query Processing
 
 ```go
