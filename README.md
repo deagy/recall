@@ -16,6 +16,7 @@ A Go library for building Retrieval-Augmented Generation (RAG) applications. Rec
 - **Multi-hop Reasoning** — Pluggable inference rules (transitive, symmetric, anti-symmetric), depth-limited path exploration, confidence propagation, natural language query → graph reasoning
 - **Multi-namespace** — Isolated knowledge spaces within a single store
 - **Distributed Storage** — Consistent hashing, automatic sharding, scatter-gather search, replication strategies (primary-replica, quorum, all-nodes)
+- **Semantic Chunking** — Similarity-based text splitting, streaming processing, chunk quality metrics, adaptive sizing
 - **Zero CGO** — Pure Go standard library only for core; SQLite via pure Go driver
 
 ## Quick Start
@@ -83,6 +84,70 @@ func main() {
     }
 }
 ```
+
+## Semantic Chunking
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+
+    "github.com/deagy/recall/chunker"
+    "github.com/deagy/recall/core"
+    "github.com/deagy/recall/embedder"
+)
+
+func main() {
+    ctx := context.Background()
+
+    // Create a semantic chunker with mock embedder
+    embedder := embedder.NewMockEmbedder(384)
+    cfg := chunker.DefaultSemanticConfig()
+    cfg.Threshold = 0.7
+    cfg.MinChunkSize = 100
+    cfg.MaxChunkSize = 2000
+
+    semanticChunker := chunker.NewSemantic(embedder, cfg)
+
+    doc := core.NewDocument("doc-1", "Semantic Chunking Example", "")
+    content := `
+        Go is a statically typed, compiled programming language designed at Google.
+        It is syntactically similar to C but with memory safety, garbage collection,
+        and structural typing. Go compiles quickly to machine code yet has the
+        convenience of a dynamically typed language.
+
+        Python is a high-level, general-purpose programming language. Its design
+        philosophy emphasizes code readability with the use of significant indentation.
+        Python is dynamically typed and garbage-collected.
+
+        Rust is a multi-paradigm, systems programming language focused on safety,
+        especially safe concurrency. Rust is syntactically similar to C++, but is
+        designed to provide better memory safety while maintaining high performance.
+    `
+
+    chunks, err := semanticChunker.Chunk(doc, content)
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    for i, chunk := range chunks {
+        fmt.Printf("[%d] size=%d: %s...\\n", i+1, len(chunk.Content), chunk.Content[:80])
+    }
+}
+```
+
+### How It Works
+
+**Semantic Similarity**: The chunker embeds each sentence and computes cosine similarity between adjacent sentences. When similarity drops below a threshold, a split point is created.
+
+**Configurable Threshold**: Lower thresholds create larger chunks (more tolerant of topic changes), while higher thresholds create smaller, more focused chunks.
+
+**Adaptive Sizing**: Minimum and maximum chunk sizes ensure chunks are neither too small to be useful nor too large for effective retrieval.
+
+**Streaming Processing**: For large documents, the StreamingChunker processes content incrementally, emitting chunks as they become available.
 
 ## Distributed Storage
 
@@ -208,6 +273,7 @@ recall/
 - [x] Phase 13: Advanced query processing (intent detection, entity extraction, query expansion, adaptive retrieval)
 - [x] Phase 14: LLM integration (pluggable backends, streaming, LLM-assisted extraction)
 - [x] Phase 15: Distributed storage (consistent hashing, sharding, scatter-gather search, replication)
+- [x] Phase 16: Streaming & semantic chunking (similarity-based splitting, incremental processing, chunk quality metrics)
 - [x] Phase 11: Pluggable NER + relation pattern extraction (HeuristicNER with stopword filtering, PatternRelationExtractor)
 - [x] Phase 12: Performance & robustness (context cancellation, SQLite HNSW mirroring, entity extraction heuristics)
 
