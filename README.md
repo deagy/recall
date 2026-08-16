@@ -124,6 +124,7 @@ recall/
 - [x] Phase 8: Knowledge graph (entity/relation extraction, BFS/DFS traversal, transitive closure, path finding, common-neighbor inference)
 - [x] Phase 9: Graph-based RAG (GraphStore interface, entity/relation extraction from text, graph-augmented retrieval)
 - [x] Phase 10: Multi-hop reasoning engine (inference rules, depth-limited path exploration, confidence propagation, natural language query reasoning)
+- [x] Phase 13: Advanced query processing (intent detection, entity extraction, query expansion, adaptive retrieval)
 - [x] Phase 11: Pluggable NER + relation pattern extraction (HeuristicNER with stopword filtering, PatternRelationExtractor)
 - [x] Phase 12: Performance & robustness (context cancellation, SQLite HNSW mirroring, entity extraction heuristics)
 
@@ -139,6 +140,42 @@ MIT
 
 ## Advanced Usage
 
+### Advanced Query Processing
+
+```go
+import (
+    "github.com/deagy/recall/graph"
+    "github.com/deagy/recall/query"
+)
+
+// Create a parser with optional knowledge graph
+g := graph.NewKnowledgeGraph()
+parser := query.NewDefaultParser(g)
+
+// Parse a query
+parsed, err := parser.Parse(ctx, "How does Go compare to Python?")
+if err != nil {
+    log.Fatal(err)
+}
+
+fmt.Printf("Intent: %s\n", parsed.Intent)
+fmt.Printf("Entities: %v\n", parsed.Entities)
+fmt.Printf("Confidence: %.2f\n", parsed.Confidence)
+
+// Expand the query using synonyms and graph relations
+expander := query.NewGraphExpander(g)
+expanded, err := expander.Expand(ctx, parsed)
+if err != nil {
+    log.Fatal(err)
+}
+
+// Use adaptive retrieval
+retriever := query.NewAdaptiveRetriever(store, parser, expander)
+results, err := retriever.Retrieve(ctx, "How does Go compare to Python?", 10)
+if err != nil {
+    log.Fatal(err)
+}
+```
 ### Hybrid Search with Custom Fusion
 
 ```go
