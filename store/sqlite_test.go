@@ -1,15 +1,15 @@
 package store
 
 import (
-	"fmt"
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/deagy/recall/core"
 	"github.com/deagy/recall/embedder"
-	"github.com/deagy/recall/index"
 	"github.com/deagy/recall/fuse"
+	"github.com/deagy/recall/index"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

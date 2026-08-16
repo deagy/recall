@@ -389,7 +389,6 @@ func TestRecursiveChunker_ChunkIDs(t *testing.T) {
 	}
 }
 
-
 func TestNewRecursive_DefaultConfig(t *testing.T) {
 	cfg := Config{}
 	c := NewRecursive(cfg)
@@ -500,7 +499,6 @@ func TestChunker_Interface(t *testing.T) {
 		t.Fatal("expected non-nil chunker")
 	}
 }
-
 
 func TestFixedChunker_OnlyNewlines(t *testing.T) {
 	cfg := DefaultConfig()

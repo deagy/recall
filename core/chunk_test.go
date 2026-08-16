@@ -155,8 +155,6 @@ func TestChunkTimestamps_SameTime(t *testing.T) {
 	}
 }
 
-
-
 func TestChunk_Embedding_EmptySlice(t *testing.T) {
 	c := &Chunk{
 		Embedding: []float32{},

@@ -229,4 +229,3 @@ func TestValue_Interface(t *testing.T) {
 		t.Errorf("expected KindLiteral, got %v", v.Kind())
 	}
 }
-

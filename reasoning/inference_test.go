@@ -254,7 +254,7 @@ func TestCommonInterestRule_FindCommonInterests(t *testing.T) {
 func TestHierarchyRule_Apply(t *testing.T) {
 	rule := &HierarchyRule{
 		HierarchyTypes: []string{"is_a", "part_of"},
-		MinWeight: 0.5,
+		MinWeight:      0.5,
 	}
 
 	rel := graph.NewRelation("dog", "animal", "is_a", 0.9)
@@ -266,7 +266,7 @@ func TestHierarchyRule_Apply(t *testing.T) {
 func TestHierarchyRule_Apply_NonHierarchy(t *testing.T) {
 	rule := &HierarchyRule{
 		HierarchyTypes: []string{"is_a", "part_of"},
-		MinWeight: 0.5,
+		MinWeight:      0.5,
 	}
 
 	rel := graph.NewRelation("alice", "bob", "knows", 0.9)

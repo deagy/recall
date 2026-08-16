@@ -117,9 +117,9 @@ func ExtractEntitiesWithPatterns(text string, patterns []*RelationPattern) []*En
 // HeuristicNER extracts entities using capitalized word detection with
 // stopword filtering and multi-word grouping.
 type HeuristicNER struct {
-	Stopwords       map[string]bool
-	MinLength       int
-	MinGroupLength  int // minimum total length for multi-word grouping (default 8)
+	Stopwords      map[string]bool
+	MinLength      int
+	MinGroupLength int // minimum total length for multi-word grouping (default 8)
 }
 
 // DefaultStopwords is a list of common English stopwords that are unlikely

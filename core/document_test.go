@@ -119,3 +119,88 @@ func TestDocument_ChunkCount(t *testing.T) {
 	}
 }
 
+func TestDocument_AddTag_EmptyTag(t *testing.T) {
+	d := NewDocument("doc-1", "Test", "source")
+	d.AddTag("")
+	// AddTag may not filter empty strings
+	_ = d.Tags
+}
+
+func TestDocument_AddTag_MultipleEmptyTags(t *testing.T) {
+	d := NewDocument("doc-1", "Test", "source")
+	d.AddTag("")
+	d.AddTag("")
+	d.AddTag("")
+	// AddTag may not filter empty strings
+	_ = d.Tags
+}
+
+func TestDocument_Metadata_Nil(t *testing.T) {
+	d := NewDocument("doc-1", "Test", "source")
+	if d.Metadata == nil {
+		t.Error("expected non-nil metadata")
+	}
+}
+
+func TestDocument_Metadata_SetAndGet(t *testing.T) {
+	d := NewDocument("doc-1", "Test", "source")
+	d.Metadata["key"] = String{Value: "value"}
+	if d.Metadata["key"].String() != "value" {
+		t.Error("expected 'value'")
+	}
+}
+
+func TestDocument_Metadata_UpdateExisting(t *testing.T) {
+	d := NewDocument("doc-1", "Test", "source")
+	d.Metadata["key"] = String{Value: "original"}
+	d.Metadata["key"] = String{Value: "updated"}
+	if d.Metadata["key"].String() != "updated" {
+		t.Error("expected 'updated'")
+	}
+}
+
+func TestDocument_Metadata_DeleteKey(t *testing.T) {
+	d := NewDocument("doc-1", "Test", "source")
+	d.Metadata["key"] = String{Value: "value"}
+	delete(d.Metadata, "key")
+	if d.Metadata["key"] != nil {
+		t.Error("expected nil after delete")
+	}
+}
+
+func TestDocument_ChunkCount_Zero(t *testing.T) {
+	d := NewDocument("doc-1", "Test", "source")
+	d.ChunkCount = 0
+	if d.ChunkCount != 0 {
+		t.Error("expected 0")
+	}
+}
+
+func TestDocument_ChunkCount_Large(t *testing.T) {
+	d := NewDocument("doc-1", "Test", "source")
+	d.ChunkCount = 1000
+	if d.ChunkCount != 1000 {
+		t.Error("expected 1000")
+	}
+}
+
+func TestDocument_CreatedAt_NotZero(t *testing.T) {
+	d := NewDocument("doc-1", "Test", "source")
+	if d.CreatedAt.IsZero() {
+		t.Error("expected non-zero CreatedAt")
+	}
+}
+
+func TestDocument_UpdatedAt_NotZero(t *testing.T) {
+	d := NewDocument("doc-1", "Test", "source")
+	if d.UpdatedAt.IsZero() {
+		t.Error("expected non-zero UpdatedAt")
+	}
+}
+
+func TestDocument_UpdatedAt_AfterCreatedAt(t *testing.T) {
+	d := NewDocument("doc-1", "Test", "source")
+	if d.UpdatedAt.Before(d.CreatedAt) {
+		t.Error("UpdatedAt should be >= CreatedAt")
+	}
+}

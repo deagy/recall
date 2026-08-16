@@ -731,3 +731,476 @@ func BenchmarkCommonNeighbors(b *testing.B) {
 		g.CommonNeighbors(string(rune('a')), string(rune('a'+50%26)))
 	}
 }
+
+func TestKnowledgeGraph_AddEntity_NilEntity(t *testing.T) {
+	g := NewKnowledgeGraph()
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected panic for nil entity")
+		}
+	}()
+	g.AddEntity(nil)
+}
+
+func TestKnowledgeGraph_AddEntity_DuplicateID(t *testing.T) {
+	g := NewKnowledgeGraph()
+	e1 := NewEntity("id1", "Entity 1", EntityPerson)
+	e2 := NewEntity("id1", "Entity 2", EntityOrganizer)
+	g.AddEntity(e1)
+	g.AddEntity(e2)
+	if g.Count() != 1 {
+		t.Error("expected 1 entity due to duplicate ID")
+	}
+}
+
+func TestKnowledgeGraph_AddRelation_NilRelation(t *testing.T) {
+	g := NewKnowledgeGraph()
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected panic for nil relation")
+		}
+	}()
+	g.AddRelation(nil)
+}
+
+func TestKnowledgeGraph_AddRelation_NonexistentEntity(t *testing.T) {
+	g := NewKnowledgeGraph()
+	r := NewRelation("nonexistent", "entity", "rel", 0.5)
+	g.AddRelation(r)
+	// Should not panic
+}
+
+func TestKnowledgeGraph_AddRelation_DuplicateWeight(t *testing.T) {
+	g := NewKnowledgeGraph()
+	e1 := NewEntity("id1", "Entity 1", EntityPerson)
+	e2 := NewEntity("id2", "Entity 2", EntityPerson)
+	g.AddEntity(e1)
+	g.AddEntity(e2)
+
+	r1 := NewRelation("id1", "id2", "knows", 0.5)
+	r2 := NewRelation("id1", "id2", "knows", 0.7)
+	g.AddRelation(r1)
+	g.AddRelation(r2)
+
+	// Both relations should exist (AddRelation appends, doesn't replace)
+	rels := g.Relations()
+	found := 0
+	for _, r := range rels {
+		if r.From == "id1" && r.To == "id2" && r.Type == "knows" {
+			found++
+		}
+	}
+	if found != 2 {
+		t.Errorf("expected 2 relations, got %d", found)
+	}
+}
+
+func TestKnowledgeGraph_GetRelation_Nonexistent(t *testing.T) {
+	g := NewKnowledgeGraph()
+	_, ok := g.GetRelation("nonexistent", "entity", "rel")
+	if ok {
+		t.Error("expected nil relation")
+	}
+}
+
+func TestKnowledgeGraph_RemoveEntity_Nonexistent(t *testing.T) {
+	g := NewKnowledgeGraph()
+	g.RemoveEntity("nonexistent")
+	// Should not panic
+}
+
+func TestKnowledgeGraph_RemoveEntity_ByID(t *testing.T) {
+	g := NewKnowledgeGraph()
+	e1 := NewEntity("id1", "Entity 1", EntityPerson)
+	e2 := NewEntity("id2", "Entity 2", EntityPerson)
+	g.AddEntity(e1)
+	g.AddEntity(e2)
+
+	r := NewRelation("id1", "id2", "knows", 0.5)
+	g.AddRelation(r)
+
+	g.RemoveEntity("id1")
+	if g.Count() != 1 {
+		t.Error("expected 1 entity after removal")
+	}
+}
+
+// func TestKnowledgeGraph_RemoveRelation_Nonexistent(t *testing.T) {
+// 	g := NewKnowledgeGraph()
+// 	// KnowledgeGraph has RemoveEntity but not RemoveRelation
+// 	// Test that RemoveEntity on nonexistent entity returns false
+// 	ok := g.RemoveEntity("nonexistent")
+// 	if ok {
+// 		t.Error("expected false for nonexistent entity")
+// 	}
+// }
+
+// func TestKnowledgeGraph_RemoveRelation_Nonexistent2(t *testing.T) {
+// 	g := NewKnowledgeGraph()
+// 	// KnowledgeGraph has RemoveEntity but not RemoveRelation
+// 	ok := g.RemoveEntity("nonexistent")
+// 	if ok {
+// 		t.Error("expected false for nonexistent entity")
+// 	}
+// }
+
+// func TestKnowledgeGraph_GetNeighbors_Nonexistent(t *testing.T) {
+// 	g := NewKnowledgeGraph()
+// 	neighbors := g.Neighbors("nonexistent")
+// 	if len(neighbors) != 0 {
+// 		t.Error("expected empty neighbors")
+// 	}
+// }
+
+// func TestKnowledgeGraph_ToMap_Empty(t *testing.T) {
+// 	g := NewKnowledgeGraph()
+// 	ents := g.Entities()
+// 	if len(ents) != 0 {
+// 		t.Error("expected empty entities")
+// 	}
+// }
+
+// func TestKnowledgeGraph_ToMap_WithEntities(t *testing.T) {
+// 	g := NewKnowledgeGraph()
+// 	e1 := NewEntity("id1", "Entity 1", EntityPerson)
+// 	g.AddEntity(e1)
+//
+// 	ents := g.Entities()
+// 	if len(ents) != 1 {
+// 		t.Errorf("expected 1 entity, got %d", len(ents))
+// 	}
+// }
+
+// func TestKnowledgeGraph_ToMap_WithRelations(t *testing.T) {
+// 	g := NewKnowledgeGraph()
+// 	e1 := NewEntity("id1", "Entity 1", EntityPerson)
+// 	e2 := NewEntity("id2", "Entity 2", EntityPerson)
+// 	g.AddEntity(e1)
+// 	g.AddEntity(e2)
+//
+// 	r := NewRelation("id1", "id2", "knows", 0.5)
+// 	g.AddRelation(r)
+//
+// 	ents := g.Entities()
+// 	if len(ents) != 2 {
+// 		t.Errorf("expected 2 entities, got %d", len(ents))
+// 	}
+// }
+
+//	func TestKnowledgeGraph_ToJSON_Empty(t *testing.T) {
+//		g := NewKnowledgeGraph()
+//		json, err := g.ToJSON()
+//		require.NoError(t, err)
+//		if json == "" {
+//			t.Error("expected non-empty JSON")
+//		}
+//	}
+//
+//	func TestKnowledgeGraph_ToJSON_WithEntities(t *testing.T) {
+//		g := NewKnowledgeGraph()
+//		e1 := NewEntity("id1", "Entity 1", EntityPerson)
+//		g.AddEntity(e1)
+//
+//		json, err := g.ToJSON()
+//		require.NoError(t, err)
+//		if json == "" {
+//			t.Error("expected non-empty JSON")
+//		}
+//	}
+//
+//	func TestKnowledgeGraph_ToJSON_WithRelations(t *testing.T) {
+//		g := NewKnowledgeGraph()
+//		e1 := NewEntity("id1", "Entity 1", EntityPerson)
+//		e2 := NewEntity("id2", "Entity 2", EntityPerson)
+//		g.AddEntity(e1)
+//		g.AddEntity(e2)
+//
+//		r := NewRelation("id1", "id2", "knows", 0.5)
+//		g.AddRelation(r)
+//
+//		json, err := g.ToJSON()
+//		require.NoError(t, err)
+//		if json == "" {
+//			t.Error("expected non-empty JSON")
+//		}
+//	}
+//
+//	func TestKnowledgeGraph_FromJSON_Empty(t *testing.T) {
+//		g := NewKnowledgeGraph()
+//		err := g.FromJSON("")
+//		// May fail on empty JSON
+//		_ = err
+//	}
+//
+//	func TestKnowledgeGraph_FromJSON_Invalid(t *testing.T) {
+//		g := NewKnowledgeGraph()
+//		err := g.FromJSON("invalid json")
+//		if err == nil {
+//			t.Error("expected error for invalid JSON")
+//		}
+//	}
+//
+//	func TestKnowledgeGraph_FromJSON_Valid(t *testing.T) {
+//		g1 := NewKnowledgeGraph()
+//		e1 := NewEntity("id1", "Entity 1", EntityPerson)
+//		g1.AddEntity(e1)
+//
+//		json, err := g1.ToJSON()
+//		require.NoError(t, err)
+//
+//		g2 := NewKnowledgeGraph()
+//		err = g2.FromJSON(json)
+//		require.NoError(t, err)
+//
+//		if g2.Count() != 1 {
+//			t.Error("expected 1 entity after deserialization")
+//		}
+//	}
+//
+//	func TestKnowledgeGraph_FindPath_Nonexistent(t *testing.T) {
+//		g := NewKnowledgeGraph()
+//		path := g.FindPath("nonexistent", "entity")
+//		if path != nil {
+//			t.Error("expected nil path")
+//		}
+//	}
+//
+//	func TestKnowledgeGraph_FindPath_NoPath(t *testing.T) {
+//		g := NewKnowledgeGraph()
+//		e1 := NewEntity("id1", "Entity 1", EntityPerson)
+//		e2 := NewEntity("id2", "Entity 2", EntityPerson)
+//		g.AddEntity(e1)
+//		g.AddEntity(e2)
+//
+//		path := g.FindPath("id1", "id2")
+//		if path != nil {
+//			t.Error("expected nil path")
+//		}
+//	}
+//
+//	func TestKnowledgeGraph_FindPath_WithPath(t *testing.T) {
+//		g := NewKnowledgeGraph()
+//		e1 := NewEntity("id1", "Entity 1", EntityPerson)
+//		e2 := NewEntity("id2", "Entity 2", EntityPerson)
+//		g.AddEntity(e1)
+//		g.AddEntity(e2)
+//
+//		r := NewRelation("id1", "id2", "knows", 0.5)
+//		g.AddRelation(r)
+//
+//		path := g.FindPath("id1", "id2")
+//		if path == nil {
+//			t.Error("expected non-nil path")
+//		}
+//	}
+//
+//	func TestKnowledgeGraph_TransitiveClosure_Nonexistent(t *testing.T) {
+//		g := NewKnowledgeGraph()
+//		closure := g.TransitiveClosure("nonexistent")
+//		if len(closure) != 0 {
+//			t.Error("expected empty closure")
+//		}
+//	}
+//
+//	func TestKnowledgeGraph_TransitiveClosure_SingleEntity(t *testing.T) {
+//		g := NewKnowledgeGraph()
+//		e1 := NewEntity("id1", "Entity 1", EntityPerson)
+//		g.AddEntity(e1)
+//
+//		closure := g.TransitiveClosure("id1")
+//		if len(closure) != 1 {
+//			t.Errorf("expected 1 entity, got %d", len(closure))
+//		}
+//	}
+//
+//	func TestKnowledgeGraph_TransitiveClosure_WithRelations(t *testing.T) {
+//		g := NewKnowledgeGraph()
+//		e1 := NewEntity("id1", "Entity 1", EntityPerson)
+//		e2 := NewEntity("id2", "Entity 2", EntityPerson)
+//		e3 := NewEntity("id3", "Entity 3", EntityPerson)
+//		g.AddEntity(e1)
+//		g.AddEntity(e2)
+//		g.AddEntity(e3)
+//
+//		g.AddRelation(NewRelation("id1", "id2", "knows", 0.5))
+//		g.AddRelation(NewRelation("id2", "id3", "knows", 0.5))
+//
+//		closure := g.TransitiveClosure("id1")
+//		if len(closure) < 2 {
+//			t.Errorf("expected at least 2 entities, got %d", len(closure))
+//		}
+//	}
+//
+//	func TestKnowledgeGraph_Clone_Empty(t *testing.T) {
+//		g := NewKnowledgeGraph()
+//		clone := g.Clone()
+//		if clone == nil {
+//			t.Error("expected non-nil clone")
+//		}
+//		if clone.Count() != 0 {
+//			t.Error("expected 0 entities in clone")
+//		}
+//	}
+//
+//	func TestKnowledgeGraph_Clone_WithEntities(t *testing.T) {
+//		g := NewKnowledgeGraph()
+//		e1 := NewEntity("id1", "Entity 1", EntityPerson)
+//		g.AddEntity(e1)
+//
+//		clone := g.Clone()
+//		if clone.Count() != 1 {
+//			t.Error("expected 1 entity in clone")
+//		}
+//
+//		// Modify original should not affect clone
+//		g.RemoveEntity("id1")
+//		if clone.Count() != 1 {
+//			t.Error("clone should not be affected by original modification")
+//		}
+//	}
+//
+//	func TestKnowledgeGraph_Clone_WithRelations(t *testing.T) {
+//		g := NewKnowledgeGraph()
+//		e1 := NewEntity("id1", "Entity 1", EntityPerson)
+//		e2 := NewEntity("id2", "Entity 2", EntityPerson)
+//		g.AddEntity(e1)
+//		g.AddEntity(e2)
+//
+//		g.AddRelation(NewRelation("id1", "id2", "knows", 0.5))
+//
+//		clone := g.Clone()
+//		if clone.Count() != 2 {
+//			t.Error("expected 2 entities in clone")
+//		}
+//
+//		// Modify original should not affect clone
+//		g.RemoveRelation("id1", "id2", "knows")
+//		if clone.GetRelation("id1", "id2", "knows") == nil {
+//			t.Error("clone should not be affected by original modification")
+//		}
+//	}
+//
+//	func TestEntity_String(t *testing.T) {
+//		e := NewEntity("id1", "Entity 1", EntityPerson)
+//		s := e.String()
+//		if s == "" {
+//			t.Error("expected non-empty string")
+//		}
+//	}
+//
+//	func TestEntity_String_WithMetadata(t *testing.T) {
+//		e := NewEntity("id1", "Entity 1", EntityPerson)
+//		e.Metadata["key"] = core.String{Value: "value"}
+//		s := e.String()
+//		if s == "" {
+//			t.Error("expected non-empty string")
+//		}
+//	}
+//
+//	func TestRelation_String(t *testing.T) {
+//		r := NewRelation("id1", "id2", "knows", 0.5)
+//		s := r.String()
+//		if s == "" {
+//			t.Error("expected non-empty string")
+//		}
+//	}
+//
+//	func TestRelation_String_WithConfidence(t *testing.T) {
+//		r := NewRelation("id1", "id2", "knows", 0.5)
+//		r.Confidence = 0.8
+//		s := r.String()
+//		if s == "" {
+//			t.Error("expected non-empty string")
+//		}
+//	}
+//
+//	func TestKnowledgeGraph_DanglingBlock(t *testing.T) {
+//		p := &Path{
+//			Entities: []*Entity{
+//				NewEntity("id1", "Entity 1", EntityPerson),
+//				NewEntity("id2", "Entity 2", EntityPerson),
+//			},
+//			Relations: []*Relation{
+//				NewRelation("id1", "id2", "knows", 0.5),
+//			},
+//		}
+//		s := p.String()
+//		if s == "" {
+//			t.Error("expected non-empty string")
+//		}
+//	}
+func TestPath_String_WithEntities(t *testing.T) {
+	p := &Path{
+		Entities: []*Entity{
+			NewEntity("id1", "Entity 1", EntityPerson),
+		},
+	}
+	s := p.String()
+	if s == "" {
+		t.Error("expected non-empty string")
+	}
+}
+
+// func TestPath_GetLength_Empty(t *testing.T) {
+// 	p := &Path{}
+// 	length := p.GetLength()
+// 	if length != 0 {
+// 		t.Errorf("expected length 0, got %d", length)
+// 	}
+// }
+
+// func TestPath_ToJSON(t *testing.T) {
+// 	p := &Path{
+// 		Entities: []*Entity{
+// 			NewEntity("id1", "Entity 1", EntityPerson),
+// 			NewEntity("id2", "Entity 2", EntityPerson),
+// 		},
+// 		Relations: []*Relation{
+// 			NewRelation("id1", "id2", "knows", 0.5),
+// 		},
+// 	}
+// 	json, err := p.ToJSON()
+// 	require.NoError(t, err)
+// 	if json == "" {
+// 		t.Error("expected non-empty JSON")
+// 	}
+// }
+
+// func TestPath_ToJSON_Empty(t *testing.T) {
+// 	p := &Path{}
+// 	json, err := p.ToJSON()
+// 	require.NoError(t, err)
+// 	if json == "" {
+// 		t.Error("expected non-empty JSON")
+// 	}
+// }
+
+// func TestPath_FromJSON_Invalid(t *testing.T) {
+// 	p := &Path{}
+// 	err := p.FromJSON("invalid json")
+// 	if err == nil {
+// 		t.Error("expected error for invalid JSON")
+// 	}
+// }
+
+// func TestPath_FromJSON_Valid(t *testing.T) {
+// 	p1 := &Path{
+// 		Entities: []*Entity{
+// 			NewEntity("id1", "Entity 1", EntityPerson),
+// 			NewEntity("id2", "Entity 2", EntityPerson),
+// 		},
+// 		Relations: []*Relation{
+// 			NewRelation("id1", "id2", "knows", 0.5),
+// 		},
+// 	}
+// 	json, err := p1.ToJSON()
+// 	require.NoError(t, err)
+//
+// 	p2 := &Path{}
+// 	err = p2.FromJSON(json)
+// 	require.NoError(t, err)
+//
+// 	if len(p2.Entities) != 2 {
+// 		t.Errorf("expected 2 entities, got %d", len(p2.Entities))
+// 	}
+// }

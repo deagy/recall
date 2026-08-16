@@ -289,13 +289,13 @@ type EntityExtractor struct {
 func NewEntityExtractor() *EntityExtractor {
 	return &EntityExtractor{
 		Patterns: map[string][]string{
-			"person": {`\b[A-Z][a-z]+\b`},
-			"location": {`\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b`},
+			"person":       {`\b[A-Z][a-z]+\b`},
+			"location":     {`\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b`},
 			"organization": {`\b[A-Z][A-Z\s]+\b`},
 		},
 		Synonyms: map[string][]string{
-			"go": {"golang", "gopher"},
-			"python": {"py"},
+			"go":         {"golang", "gopher"},
+			"python":     {"py"},
 			"javascript": {"js"},
 		},
 	}
