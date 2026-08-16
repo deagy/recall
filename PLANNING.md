@@ -1,5 +1,7 @@
 # Recall — Development Plan
 
+> **Note:** This file tracks completed phases. For the full future roadmap, see [ROADMAP.md](./ROADMAP.md).
+
 ## Completed Phases
 
 - [x] Phase 1: Core data model + chunking
@@ -73,6 +75,7 @@
 - All phases maintain zero-CGO requirement for core functionality
 - SQLite uses `modernc.org/sqlite` (pure Go driver)
 - Test coverage target: >80% for all packages
+- For future phases and roadmap, see [ROADMAP.md](./ROADMAP.md)
 ---
 
 ## Phase 5: Production Readiness

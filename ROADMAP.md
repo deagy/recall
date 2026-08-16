@@ -1,0 +1,560 @@
+# Recall — Development Roadmap
+
+This document outlines the future development roadmap for the Recall library, organized by priority tiers and target phases. The current codebase has **18 completed phases** covering core RAG functionality (storage, search, chunking, knowledge graphs, reasoning, distributed storage, caching, and LLM integration).
+
+---
+
+## Current State Assessment
+
+| Metric | Status |
+|--------|--------|
+| Completed Phases | 18/18 |
+| Packages | 14 source packages + 1 example |
+| All Tests Pass | ✅ Yes |
+| Overall Coverage Target | >80% (not yet met across all packages) |
+| Zero CGO | ✅ Maintained |
+| LLM Backends | OpenAI, Ollama (Mock) |
+| Embedding Providers | Mock only |
+| Fusion Methods | WeightedFusion, RRF |
+
+### Coverage Gaps (Below 80% Target)
+
+| Package | Coverage | Gap |
+|---------|----------|-----|
+| `llm/` | 40.2% | -39.8% |
+| `store/` | 49.9% | -30.1% |
+| `distributed/` | 55.8% | -24.2% |
+| `core/` | 67.7% | -12.3% |
+| `index/` | 70.9% | -9.1% |
+| `reasoning/` | 74.9% | -5.1% |
+| `chunker/` | 78.1% | -1.9% |
+
+### Strong Coverage (Above 80%)
+
+| Package | Coverage |
+|---------|----------|
+| `pipeline/` | 97.5% |
+| `cache/` | 97.8% |
+| `bm25/` | 96.6% |
+| `embedder/` | 94.7% |
+| `fuse/` | 86.9% |
+| `graph/` | 86.0% |
+| `query/` | 89.1% |
+
+---
+
+## Phase 19: Test Coverage Hardening
+
+**Goal:** Bring all packages to ≥80% test coverage.
+
+### 19.1 LLM Package Tests (`llm/`)
+- [ ] Test `OpenAIClient.Chat()` with mocked HTTP responses (success, error, timeout)
+- [ ] Test `OpenAIClient.ChatStream()` chunk processing
+- [ ] Test `OllamaClient.Chat()` and `ChatStream()`
+- [ ] Test `LLMExtractor.ExtractEntities()` with valid/invalid JSON
+- [ ] Test `LLMExtractor.ExtractRelations()` edge cases
+- [ ] Test `MockBackend` with various response scenarios
+- [ ] Test `ResponseFormat` with JSON schema
+- [ ] Test `ChatRequest` validation (missing model, invalid temperature)
+
+### 19.2 Store Package Tests (`store/`)
+- [ ] Test `SQLiteStore` migration and schema evolution
+- [ ] Test `SQLiteStore` concurrent access (RWMutex correctness)
+- [ ] Test `SQLiteGraphStore` persistence round-trip with large graphs
+- [ ] Test `MemoryStore` namespace isolation under concurrency
+- [ ] Test `GraphStore` extraction with empty/nil inputs
+- [ ] Test `SQLiteStore` recovery after unexpected close
+- [ ] Test `MemoryStore` delete cascading (chunk → document)
+
+### 19.3 Distributed Package Tests (`distributed/`)
+- [ ] Test consistent hashing with node add/remove (hash ring stability)
+- [ ] Test scatter-gather with partial node failures
+- [ ] Test replication strategies under concurrent writes
+- [ ] Test shard rebalancing when nodes join/leave
+- [ ] Test `DistributedStore` with single-node cluster
+
+### 19.4 Core Package Tests (`core/`)
+- [ ] Test `Value` type serialization/deserialization edge cases
+- [ ] Test `Document` equality and comparison
+- [ ] Test `Chunk` metadata manipulation
+- [ ] Test custom error wrapping and unwrapping
+
+### 19.5 Index Package Tests (`index/`)
+- [ ] Test HNSW graph construction with edge cases (duplicate IDs, empty graphs)
+- [ ] Test filter combinations (term + range + date range)
+- [ ] Test memory index with mixed metadata types
+- [ ] Test HNSW parameter sensitivity (M, efConstruction, efSearch)
+
+### 19.6 Reasoning Package Tests (`reasoning/`)
+- [ ] Test inference rules with cyclic graphs
+- [ ] Test confidence propagation with deep paths
+- [ ] Test natural language query parsing edge cases
+- [ ] Test entity extraction with ambiguous text
+
+### 19.7 Chunker Package Tests (`chunker/`)
+- [ ] Test semantic chunker with edge cases (single sentence, empty text)
+- [ ] Test streaming chunker with incremental input
+- [ ] Test chunk quality metrics with degenerate inputs
+
+**Estimated Effort:** 3–4 weeks
+
+---
+
+## Phase 20: Real Embedding Providers
+
+**Goal:** Support production embedding models beyond the mock embedder.
+
+### 20.1 OpenAI Embeddings
+- [ ] `OpenAIEmbedder` implementing `embedder.Embedder`
+- [ ] Support for `text-embedding-3-small`, `text-embedding-3-large`, `text-embedding-ada-002`
+- [ ] Batch embedding with automatic batching
+- [ ] Rate limiting and retry with exponential backoff
+- [ ] Dimension validation and caching
+
+### 20.2 Local Embedding Models (ONNX Runtime)
+- [ ] `ONNXEmbedder` using pure-Go ONNX inference
+- [ ] Support for `all-MiniLM-L6-v2`, `nomic-embed-text`, `bge-small-en-v1.5`
+- [ ] CPU optimization (thread pool, vectorization)
+- [ ] Model download and caching
+
+### 20.3 Cohere Embeddings
+- [ ] `CohereEmbedder` for `embed-english-v3.0`, `embed-multilingual-v3.0`
+- [ ] Input type support (search_document, search_query)
+- [ ] Truncation strategies
+
+### 20.4 Hugging Face Transformers (Go)
+- [ ] `HFEmbedder` using pure-Go transformer runtime
+- [ ] Support for sentence-transformers models
+- [ ] Quantized model support (GPTQ, AWQ)
+
+### 20.5 Embedding Pipeline
+- [ ] `embedder.Pipeline` for chaining embedders (e.g., retry on different provider)
+- [ ] `embedder.CachingEmbedder` wrapper (integrate with cache package)
+- [ ] Embedding dimension auto-detection
+
+**Estimated Effort:** 4–5 weeks
+**Priority:** High (critical for production use)
+
+---
+
+## Phase 21: Document Ingestion Pipeline
+
+**Goal:** Support ingesting documents from various formats and sources.
+
+### 21.1 Document Loaders
+- [ ] `loader.TextLoader` — plain text files
+- [ ] `loader.MarkdownLoader` — Markdown with heading-based chunking
+- [ ] `loader.HTMLLoader` — HTML with content extraction (goquery)
+- [ ] `loader.PDFLoader` — PDF parsing (pure Go: `pdfcpu` or `unipdf`)
+- [ ] `loader.DocxLoader` — DOCX extraction (pure Go: `unioffice`)
+- [ ] `loader.CSVLoader` — CSV with configurable column mapping
+- [ ] `loader.JSONLoader` — JSON with nested extraction
+- [ ] `loader.DirectoryLoader` — recursive file system scanning
+
+### 21.2 Source Connectors
+- [ ] `connector.WebConnector` — fetch URLs with rate limiting
+- [ ] `connector.GitConnector` — clone and index git repositories
+- [ ] `connector.S3Connector` — S3 bucket indexing
+- [ ] `connector.GitHubConnector` — GitHub repo/issue indexing
+- [ ] `connector.DatabaseConnector` — SQL database table indexing
+
+### 21.3 Ingestion Pipeline
+- [ ] `ingest.Pipeline` orchestrating load → preprocess → chunk → embed → upload
+- [ ] `ingest.Deduplication` — content-hash based duplicate detection
+- [ ] `ingest.Validation` — schema validation for structured documents
+- [ ] `ingest.Progress` — progress tracking and callbacks
+- [ ] `ingest.Batch` — parallel batch ingestion with configurable concurrency
+- [ ] `ingest.Incremental` — delta ingestion (only new/changed documents)
+
+**Estimated Effort:** 4–5 weeks
+**Priority:** Medium-High
+
+---
+
+## Phase 22: Reranking
+
+**Goal:** Add cross-encoder reranking for improved retrieval quality.
+
+### 22.1 Cross-Encoder Rerankers
+- [ ] `reranker.CrossEncoderReranker` — lightweight cross-encoder (pure Go ONNX)
+- [ ] `reranker.SparseReranker` — BM25-based re-scoring
+- [ ] `reranker.LLMReranker` — LLM-as-judge reranking
+- [ ] `reranker.EnsembleReranker` — combine multiple rerankers
+
+### 22.2 Reranking Pipeline Integration
+- [ ] `pipeline.Reranker` interface
+- [ ] `pipeline.RAGPipeline.WithReranker()` builder
+- [ ] Two-stage retrieval: coarse (vector) → fine (rerank)
+- [ ] Configurable top-K at each stage
+- [ ] Reranking score attribution in `SearchResult`
+
+### 22.3 Learning-to-Rank (Future)
+- [ ] `reranker.LTRanker` — simple pointwise LTR model
+- [ ] Feedback-driven reranker adaptation
+- [ ] A/B testing framework for reranker comparison
+
+**Estimated Effort:** 3–4 weeks
+**Priority:** Medium-High (significant quality improvement)
+
+---
+
+## Phase 23: Observability & Monitoring
+
+**Goal:** Add production-grade observability.
+
+### 23.1 Metrics
+- [ ] `metrics.StoreMetrics` — search latency, throughput, error rates
+- [ ] `metrics.EmbeddingMetrics` — embedding latency, dimension stats
+- [ ] `metrics.CacheMetrics` — hit/miss ratio, eviction count
+- [ ] `metrics.GraphMetrics` — traversal depth, inference counts
+- [ ] Export to Prometheus format (`/metrics` endpoint)
+- [ ] Structured logging with correlation IDs
+
+### 23.2 Tracing
+- [ ] OpenTelemetry integration
+- [ ] Distributed trace spans for search, embedding, chunking
+- [ ] Store-level tracing (upload → search → retrieve)
+- [ ] Span tags for metadata (namespace, document ID, query type)
+
+### 23.3 Health & Diagnostics
+- [ ] `store.HealthCheck()` — connectivity, index integrity
+- [ ] `store.IntegrityCheck()` — verify data consistency
+- [ ] `distributed.ClusterHealth()` — node status, shard distribution
+- [ ] Expose diagnostics via configurable endpoint or CLI
+
+### 23.4 Query Analytics
+- [ ] `analytics.QueryLog` — log queries with latency and results
+- [ ] `analytics.PopularQueries` — trending query detection
+- [ ] `analytics.DropOffDetection` — queries with no good results
+- [ ] Export to configurable sink (file, HTTP, message queue)
+
+**Estimated Effort:** 3–4 weeks
+**Priority:** Medium
+
+---
+
+## Phase 24: Feedback Loop & Evaluation
+
+**Goal:** Enable continuous improvement of retrieval quality.
+
+### 24.1 Relevance Feedback
+- [ ] `feedback.RelevanceFeedback` — adjust query based on user feedback
+- [ ] `feedback.Rocchio` — classic Rocchio algorithm for query expansion
+- [ ] `feedback.ExpandAndRetrieve` — retrieve → user marks relevant → re-rank
+- [ ] Store feedback in metadata for future training
+
+### 24.2 Evaluation Framework
+- [ ] `eval.RetrievalEval` — precision, recall, MRR, NDCG at K
+- [ ] `eval.RAGEval` — answer quality metrics (faithfulness, relevance)
+- [ ] `eval.BenchmarkSuite` — regression testing for retrieval quality
+- [ ] `eval.Dataset` — load/save evaluation datasets
+- [ ] `eval.Report` — generate evaluation reports
+
+### 24.3 Human-in-the-Loop
+- [ ] `hitl.ReviewQueue` — queue chunks for human review
+- [ ] `hitl.Annotation` — store human annotations
+- [ ] `hitl.ActiveLearning` — prioritize uncertain chunks for review
+- [ ] Web UI for annotation (optional, Phase 30)
+
+### 24.4 Automated Testing
+- [ ] `testutil.FixtureStore` — in-memory store with preloaded data
+- [ ] `testutil.MockLLM` — deterministic LLM responses for testing
+- [ ] `testutil.GoldenFile` — compare results against golden files
+- [ ] CI integration for regression testing
+
+**Estimated Effort:** 3–4 weeks
+**Priority:** Medium
+
+---
+
+## Phase 25: Resilience & Reliability
+
+**Goal:** Add production reliability features.
+
+### 25.1 LLM Backend Resilience
+- [ ] `llm.RetryBackend` — retry with exponential backoff
+- [ ] `llm.CircuitBreakerBackend` — trip on failure threshold
+- [ ] `llm.RateLimitBackend` — token bucket rate limiting
+- [ ] `llm.FallbackBackend` — fallback to secondary provider
+- [ ] `llm.Middleware` — chain backends with interceptors
+
+### 25.2 Store Resilience
+- [ ] `store.Checkpoint` — periodic SQLite WAL checkpoints
+- [ ] `store.Backup` — point-in-time backup and restore
+- [ ] `store.Migration` — schema versioning and automatic migration
+- [ ] `store.CorruptionDetection` — detect and repair corrupted data
+
+### 25.3 Distributed Resilience
+- [ ] `distributed.NodeHealth` — periodic health checks
+- [ ] `distributed.AutoRebalance` — automatic shard rebalancing
+- [ ] `distributed.FaultTolerance` — operate with degraded nodes
+- [ ] `distributed.Consensus` — leader election for writes
+
+### 25.4 Context Management
+- [ ] `pipeline.SmartContextWindow` — priority-based chunk inclusion
+- [ ] `pipeline.ContextCompression` — summarize long contexts
+- [ ] `pipeline.CitationTracking` — track which chunk contributed what
+- [ ] `pipeline.HallucinationDetection` — verify claims against sources
+
+**Estimated Effort:** 3–4 weeks
+**Priority:** Medium
+
+---
+
+## Phase 26: Advanced Retrieval
+
+**Goal:** State-of-the-art retrieval techniques.
+
+### 26.1 Advanced Indexing
+- [ ] `index.ScalarQuantization` — 8-bit SQ for memory efficiency
+- [ ] `index.ProductQuantization` — PQ for large-scale ANN
+- [ ] `index.HybridIndex` — combine HNSW + BM25 in single index
+- [ ] `index.MetadataIndex` — fast metadata-based filtering index
+- [ ] `index.MultiVector` — multiple embeddings per chunk (query + passage)
+
+### 26.2 Query Techniques
+- [ ] `query.Rewrite` — LLM-powered query rewriting
+- [ ] `query.HyDE` — Hypothetical Document Embeddings
+- [ ] `query.StepBack` — step-back prompting for better retrieval
+- [ ] `query.SubQuery` — decompose complex queries (already partial)
+- [ ] `query.Multilingual` — multilingual query support
+
+### 26.3 Chunking Advances
+- [ ] `chunker.ParentChild` — parent chunk retrieval with child detail
+- [ ] `chunker.DocumentAware` — respect document boundaries
+- [ ] `chunker.Adaptive` — auto-tune chunk size based on content
+
+### 26.4 Multi-Modal
+- [ ] `embedder.MultiModalEmbedder` — text + image embeddings
+- [ ] `store.MultiModalStore` — store and retrieve across modalities
+- [ ] `pipeline.MultiModalPipeline` — multi-modal RAG
+
+**Estimated Effort:** 5–6 weeks
+**Priority:** Medium-Low
+
+---
+
+## Phase 27: API & Service Layer
+
+**Goal:** Expose Recall as a service.
+
+### 27.1 REST API
+- [ ] `api.Server` — HTTP server using standard library
+- [ ] `POST /upload` — upload documents
+- [ ] `GET /search` — vector search
+- [ ] `POST /hybrid-search` — hybrid search
+- [ ] `POST /rag` — full RAG pipeline query
+- [ ] `GET /graph/{entity}` — graph entity lookup
+- [ ] `POST /graph/reason` — graph reasoning
+- [ ] OpenAPI/Swagger specification
+- [ ] API authentication (API keys, JWT)
+
+### 27.2 gRPC (Future)
+- [ ] Protocol buffer definitions
+- [ ] gRPC server with streaming support
+- [ ] Bidirectional streaming for RAG responses
+
+### 27.3 Configuration
+- [ ] YAML/JSON configuration file support
+- [ ] Environment variable overrides
+- [ ] Configuration validation
+- [ ] Hot-reload support
+
+### 27.4 Deployment
+- [ ] Dockerfile
+- [ ] docker-compose for multi-node deployment
+- [ ] Kubernetes manifests (Deployment, Service, HPA)
+- [ ] Health check endpoints for orchestrators
+
+**Estimated Effort:** 4–5 weeks
+**Priority:** Medium-Low
+
+---
+
+## Phase 28: Security & Access Control
+
+**Goal:** Add security features for multi-tenant deployments.
+
+### 28.1 Authentication & Authorization
+- [ ] API key authentication
+- [ ] JWT token validation
+- [ ] Role-based access control (RBAC)
+- [ ] Namespace-level isolation enforcement
+- [ ] Row-level security for metadata filters
+
+### 28.2 Data Security
+- [ ] Encryption at rest (SQLite page encryption)
+- [ ] Encryption in transit (TLS for distributed mode)
+- [ ] Secrets management (environment variables, vault integration)
+- [ ] Audit logging for all operations
+
+### 28.3 Input Validation
+- [ ] Query sanitization
+- [ ] Document size limits
+- [ ] Embedding dimension validation
+- [ ] SQL injection prevention (for SQLite backend)
+
+### 28.4 Compliance
+- [ ] Data retention policies
+- [ ] Right to deletion (GDPR)
+- [ ] Data export functionality
+- [ ] Compliance reporting
+
+**Estimated Effort:** 3–4 weeks
+**Priority:** Low (needed for enterprise deployments)
+
+---
+
+## Phase 29: CLI Tool
+
+**Goal:** Provide a command-line interface for common operations.
+
+### 29.1 Core Commands
+- [ ] `recall upload` — upload documents to a store
+- [ ] `recall search` — perform vector search
+- [ ] `recall hybrid-search` — perform hybrid search
+- [ ] `recall rag` — run RAG query
+- [ ] `recall graph` — query the knowledge graph
+- [ ] `recall reason` — run multi-hop reasoning
+
+### 29.2 Management Commands
+- [ ] `recall store info` — display store statistics
+- [ ] `recall store migrate` — run schema migrations
+- [ ] `recall store backup` — create a backup
+- [ ] `recall store restore` — restore from backup
+- [ ] `recall cluster status` — check distributed cluster health
+
+### 29.3 Evaluation Commands
+- [ ] `recall eval` — run evaluation benchmarks
+- [ ] `recall eval compare` — compare two configurations
+
+### 29.4 Implementation
+- [ ] Use `github.com/spf13/cobra` for CLI framework
+- [ ] Subcommands with flags and positional arguments
+- [ ] Output formatting (table, JSON, YAML)
+- [ ] Configuration file support (~/.recall.yaml)
+
+**Estimated Effort:** 2–3 weeks
+**Priority:** Low-Medium
+
+---
+
+## Phase 30: Web UI (Optional)
+
+**Goal:** Provide a visual interface for exploration and debugging.
+
+### 30.1 Dashboard
+- [ ] Store statistics (documents, chunks, namespaces)
+- [ ] Search query interface
+- [ ] Result visualization with highlighting
+- [ ] Graph visualization (force-directed layout)
+
+### 30.2 Annotation Interface
+- [ ] Chunk review and annotation
+- [ ] Relevance labeling
+- [ ] Feedback submission
+
+### 30.3 Monitoring Dashboard
+- [ ] Query analytics
+- [ ] Performance metrics
+- [ ] Error tracking
+
+### 30.4 Implementation
+- [ ] Embeddable web component or standalone app
+- [ ] React/Vue frontend with Go backend
+- [ ] OR: integrate with existing tools (Grafana for metrics, etc.)
+
+**Estimated Effort:** 4–6 weeks
+**Priority:** Low
+
+---
+
+## Phase 31: SDK Wrappers (Community)
+
+**Goal:** Enable ecosystem integration.
+
+### 31.1 Python SDK
+- [ ] `recall-python` — Python client library
+- [ ] Async support (asyncio)
+- [ ] LangChain integration (`langchain-recall`)
+- [ ] LlamaIndex integration (`llama-index-retrievers-recall`)
+
+### 31.2 TypeScript SDK
+- [ ] `recall-js` — Node.js/browser client
+- [ ] Next.js integration
+- [ ] LangChain.js integration
+
+### 31.3 Plugin Ecosystem
+- [ ] Plugin interface for custom chunkers, embedders, rerankers
+- [ ] Plugin marketplace / registry
+- [ ] Community plugin examples
+
+**Estimated Effort:** Ongoing
+**Priority:** Low
+
+---
+
+## Phase 32: Project Hygiene & Documentation
+
+**Goal:** Improve project infrastructure and documentation.
+
+### 32.1 Documentation
+- [ ] `CHANGELOG.md` — version history
+- [ ] `CONTRIBUTING.md` — contribution guidelines
+- [ ] `SECURITY.md` — security policy and reporting
+- [ ] `CODE_OF_CONDUCT.md` — community standards
+- [ ] `ARCHITECTURE.md` — detailed architecture decisions
+- [ ] `GOVERNANCE.md` — project governance
+- [ ] Per-package README files
+- [ ] Migration guide for version upgrades
+
+### 32.2 CI/CD
+- [ ] GitHub Actions workflow
+  - [ ] Lint (`golangci-lint`)
+  - [ ] Test (`go test -cover`)
+  - [ ] Build verification
+  - [ ] Coverage threshold enforcement
+  - [ ] Benchmark regression detection
+- [ ] Semantic versioning with automated tagging
+- [ ] Automated release notes generation
+
+### 32.3 Code Quality
+- [ ] `golangci-lint` configuration
+- [ ] Static analysis (staticcheck, revive)
+- [ ] Dependency vulnerability scanning
+- [ ] License compliance checking
+
+### 32.4 Examples Enhancement
+- [ ] More comprehensive examples in `example/`
+- [ ] End-to-end tutorial (ingest → search → RAG → evaluate)
+- [ ] Production deployment example
+- [ ] Benchmark comparison guide
+
+**Estimated Effort:** 2–3 weeks
+**Priority:** Medium
+
+---
+
+## Summary: Recommended Execution Order
+
+```
+Priority 1 (Foundation)          Priority 2 (Production)        Priority 3 (Growth)          Priority 4 (Ecosystem)
+┌─────────────────────┐         ┌─────────────────────┐        ┌─────────────────────┐      ┌─────────────────────┐
+│ Phase 19: Test      │         │ Phase 20: Embedding │        │ Phase 23:           │      │ Phase 27: API       │
+│   Coverage          │         │   Providers         │        │   Observability     │      │   & Service Layer   │
+│ Phase 21: Doc       │         │ Phase 22: Reranking │        │ Phase 24: Feedback  │      │ Phase 28: Security  │
+│   Ingestion         │         │ Phase 25: Resilience│        │   & Evaluation      │      │ Phase 29: CLI       │
+│ Phase 26: Advanced  │         │ Phase 21: Doc       │        │ Phase 26: Advanced  │      │ Phase 30: Web UI    │
+│   Retrieval         │         │   Ingestion (cont.) │        │   Retrieval (cont.) │      │ Phase 31: SDKs      │
+└─────────────────────┘         └─────────────────────┘        └─────────────────────┘      └─────────────────────┘
+         │                               │                              │                          │
+         ▼                               ▼                              ▼                          ▼
+    ~4 weeks                        ~10 weeks                      ~10 weeks                    ~12 weeks
+```
+
+### Total Estimated Effort: ~36–38 weeks for full roadmap
+
+### Quick Wins (can be done in parallel, ~2 weeks each):
+1. **Test coverage hardening** (Phase 19) — immediately improves confidence
+2. **Project hygiene** (Phase 32) — improves developer experience
+3. **CLI tool** (Phase 29) — improves usability

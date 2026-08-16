@@ -512,6 +512,42 @@ recall/
 - [x] Phase 11: Pluggable NER + relation pattern extraction (HeuristicNER with stopword filtering, PatternRelationExtractor)
 - [x] Phase 12: Performance & robustness (context cancellation, SQLite HNSW mirroring, entity extraction heuristics)
 
+## Roadmap
+
+The full development roadmap is documented in [ROADMAP.md](./ROADMAP.md). Current priorities:
+
+| Priority | Phase | Focus | Estimated Effort |
+|----------|-------|-------|-----------------|
+| **1 — Foundation** | 19 | Test coverage hardening (all packages → ≥80%) | ~4 weeks |
+| | 21 | Document ingestion pipeline (PDF, DOCX, HTML, connectors) | |
+| | 26 | Advanced retrieval (PQ/SQ indexing, HyDE, parent-child chunking) | |
+| **2 — Production** | 20 | Real embedding providers (OpenAI, Cohere, local ONNX) | ~10 weeks |
+| | 22 | Cross-encoder reranking for retrieval quality | |
+| | 25 | Resilience (retry, circuit breaker, rate limiting, backup) | |
+| **3 — Growth** | 23 | Observability (metrics, tracing, health checks) | ~10 weeks |
+| | 24 | Feedback loop & evaluation framework (NDCG, relevance feedback) | |
+| **4 — Ecosystem** | 27 | REST API & service layer (Docker, K8s) | ~12 weeks |
+| | 28 | Security (auth, RBAC, encryption, audit logging) | |
+| | 29 | CLI tool (`recall search`, `recall upload`, etc.) | |
+| | 30–32 | Web UI, SDK wrappers (Python/TypeScript), project hygiene | |
+
+**Total estimated effort: ~36–38 weeks for full roadmap.**
+
+### Quick Wins
+1. **Test coverage hardening** — `llm/` at 40.2%, `store/` at 49.9% need immediate attention
+2. **Project hygiene** — CHANGELOG, CONTRIBUTING, CI/CD, golangci-lint
+3. **CLI tool** — improves developer ergonomics
+
+### Current Coverage Gaps
+
+| Package | Coverage | Target |
+|---------|----------|--------|
+| `llm/` | 40.2% | ≥80% |
+| `store/` | 49.9% | ≥80% |
+| `distributed/` | 55.8% | ≥80% |
+| `core/` | 67.7% | ≥80% |
+| `index/` | 70.9% | ≥80% |
+
 ## Testing
 
 ```bash
