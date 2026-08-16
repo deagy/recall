@@ -18,6 +18,7 @@ A Go library for building Retrieval-Augmented Generation (RAG) applications. Rec
 - **Distributed Storage** — Consistent hashing, automatic sharding, scatter-gather search, replication strategies (primary-replica, quorum, all-nodes)
 - **Semantic Chunking** — Similarity-based text splitting, streaming processing, chunk quality metrics, adaptive sizing
 - **Graph Embeddings** — TransE-based entity/relation embeddings, link prediction, entity similarity search, knowledge graph completion
+- **Intelligent Caching** — LRU eviction, TTL-based expiration, query result caching, embedding caching, graph traversal caching, multi-level caching (L1/L2), cache warming
 - **Zero CGO** — Pure Go standard library only for core; SQLite via pure Go driver
 
 ## Quick Start
@@ -350,6 +351,115 @@ where `score(pos) = ||h + r - t||` and `score(neg) = ||h' + r - t'||` for corrup
 
 **Entity Similarity**: Entity embeddings capture semantic similarity. Entities that appear in similar relational contexts will have similar embeddings, enabling similarity-based retrieval.
 
+## Intelligent Caching
+
+Reduce latency and cost for repeated queries through intelligent caching with LRU eviction, TTL-based expiration, and multi-level caching.
+
+```go
+package main
+
+import (
+    "fmt"
+    "log"
+    "time"
+
+    "github.com/deagy/recall/cache"
+)
+
+func main() {
+    // Create an LRU cache with 1000 entry capacity
+    lru := cache.NewLRUCache(cache.DefaultCacheConfig())
+
+    // Store a query result
+    queryResult := map[string]interface{}{
+        "results": []string{"result1", "result2"},
+        "count":   2,
+    }
+    lru.Set("query:123", queryResult, 5*time.Minute)
+
+    // Retrieve the cached result
+    val, ok := lru.Get("query:123")
+    if ok {
+        fmt.Printf("Cache hit: %v\\n", val)
+    }
+
+    // Query result cache
+    qc := cache.NewQueryCache(1000)
+    qc.Set("what is Go?", nil, &cache.QueryResult{
+        Query:   "what is Go?",
+        Results: []interface{}{"Go is a programming language"},
+    }, 10*time.Minute)
+
+    // Embedding cache
+    ec := cache.NewEmbeddingCache(5000)
+    embedding := []float32{0.1, 0.2, 0.3}
+    ec.Set("text to embed", embedding, 1*time.Hour)
+
+    // Multi-level cache (L1: fast in-memory, L2: larger storage)
+    l1 := cache.NewLRUCache(cache.DefaultCacheConfig())
+    l2 := cache.NewLRUCache(cache.DefaultCacheConfig())
+    mlc := cache.NewMultiLevelCache(l1, l2)
+
+    // Set in both levels
+    mlc.Set("important data", "critical value", 30*time.Minute)
+
+    // Get from L1 first, then L2 (with automatic promotion)
+    val, ok = mlc.Get("important data")
+    if ok {
+        fmt.Printf("Multi-level cache hit: %v\\n", val)
+    }
+
+    // Cache warming: pre-populate cache with popular queries
+    warmer := cache.NewCacheWarmer(lru)
+    warmer.AddRequest(cache.WarmRequest{
+        Query:  "popular query 1",
+        Result: "cached result 1",
+        TTL:    1 * time.Hour,
+    })
+    warmer.AddRequest(cache.WarmRequest{
+        Query:  "popular query 2",
+        Result: "cached result 2",
+        TTL:    1 * time.Hour,
+    })
+    warmer.Warm()
+
+    fmt.Printf("Warm stats: %s\\n", warmer.Stats())
+
+    // Cache manager for multiple caches
+    manager := cache.NewCacheManager(cache.DefaultCacheConfig())
+    queryCache := manager.GetCache("queries")
+    embeddingCache := manager.GetCache("embeddings")
+
+    // Get aggregated stats
+    stats := manager.Stats()
+    fmt.Printf("Cache manager stats: %v\\n", stats)
+
+    _ = log.Println // suppress unused import
+}
+```
+
+### How It Works
+
+**LRU Eviction**: The Least Recently Used (LRU) cache automatically evicts the least recently accessed entries when the cache reaches its capacity. This ensures that frequently accessed data stays in memory.
+
+**TTL-Based Expiration**: Cache entries can have a time-to-live (TTL) after which they automatically expire. This prevents stale data from being served.
+
+**Query Result Cache**: Caches the results of expensive queries. When the same query is issued again, the cached result is returned immediately, avoiding redundant computation.
+
+**Embedding Cache**: Caches embedding vectors to avoid redundant computation. Since embeddings are often expensive to compute, caching them can significantly reduce latency.
+
+**Graph Traversal Cache**: Caches the results of graph traversals (e.g., "find all friends of X"). When the same traversal is requested again, the cached result is returned.
+
+**Multi-Level Caching**: Uses two levels of caching:
+- **L1**: Fast, small in-memory cache (e.g., LRU with 1000 entries)
+- **L2**: Slower, larger storage (e.g., LRU with 100,000 entries or disk-based)
+
+When a value is retrieved from L2, it is automatically promoted to L1 for faster future access.
+
+**Cache Warming**: Pre-populates the cache with popular queries before the application starts serving traffic. This eliminates the "cold start" problem and ensures fast response times from the beginning.
+
+**Cache Manager**: Manages multiple cache instances with a unified interface. Useful for organizing caches by purpose (queries, embeddings, graph traversals, etc.).
+
 ## Architecture
 
 ```
@@ -357,6 +467,7 @@ recall/
 ├── core/           # Data types: Chunk, Document, Value, errors
 ├── chunker/        # Text chunking: Fixed, Recursive, Semantic, Streaming strategies
 ├── embedder/       # Embedding interface + Mock implementation
+├── cache/          # Intelligent caching: LRU, TTL, query/embedding/graph caching, multi-level
 ├── index/          # Storage index: Memory (brute-force + HNSW), filters
 ├── store/          # High-level store: Memory + SQLite backends, GraphStore
 ├── pipeline/       # RAG pipeline: context assembly, templates, queries
@@ -397,6 +508,7 @@ recall/
 - [x] Phase 15: Distributed storage (consistent hashing, sharding, scatter-gather search, replication)
 - [x] Phase 16: Streaming & semantic chunking (similarity-based splitting, incremental processing, chunk quality metrics)
 - [x] Phase 17: Graph embeddings (TransE algorithm, link prediction, entity/relation similarity, knowledge graph completion)
+- [x] Phase 18: Intelligent caching (LRU eviction, TTL expiration, query/embedding/graph traversal caching, multi-level L1/L2, cache warming)
 - [x] Phase 11: Pluggable NER + relation pattern extraction (HeuristicNER with stopword filtering, PatternRelationExtractor)
 - [x] Phase 12: Performance & robustness (context cancellation, SQLite HNSW mirroring, entity extraction heuristics)
 
