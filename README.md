@@ -15,6 +15,7 @@ A Go library for building Retrieval-Augmented Generation (RAG) applications. Rec
 - **Knowledge Graph** — Entity/relation extraction, graph traversal (BFS/DFS), transitive closure, path finding, common-neighbor inference
 - **Multi-hop Reasoning** — Pluggable inference rules (transitive, symmetric, anti-symmetric), depth-limited path exploration, confidence propagation, natural language query → graph reasoning
 - **Multi-namespace** — Isolated knowledge spaces within a single store
+- **Distributed Storage** — Consistent hashing, automatic sharding, scatter-gather search, replication strategies (primary-replica, quorum, all-nodes)
 - **Zero CGO** — Pure Go standard library only for core; SQLite via pure Go driver
 
 ## Quick Start
@@ -83,6 +84,85 @@ func main() {
 }
 ```
 
+## Distributed Storage
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+
+    "github.com/deagy/recall/chunker"
+    "github.com/deagy/recall/core"
+    "github.com/deagy/recall/distributed"
+    "github.com/deagy/recall/embedder"
+    "github.com/deagy/recall/index"
+)
+
+func main() {
+    ctx := context.Background()
+
+    // Create a distributed store with mock embedder
+    ds := distributed.NewDistributedStore(
+        distributed.DefaultClusterConfig(),
+        embedder.NewMockEmbedder(384),
+        chunker.NewFixed,
+        "distributed-knowledge",
+    )
+
+    // Add nodes to the cluster
+    ds.AddNode(&distributed.Node{
+        ID:      "node-1",
+        Address: "localhost:8080",
+    })
+    ds.AddNode(&distributed.Node{
+        ID:      "node-2",
+        Address: "localhost:8081",
+    })
+    ds.AddNode(&distributed.Node{
+        ID:      "node-3",
+        Address: "localhost:8082",
+    })
+
+    // Upload a document (automatically sharded across nodes)
+    doc := core.NewDocument("doc-1", "Distributed Systems", "https://en.wikipedia.org/wiki/Distributed_computing")
+    err := ds.Upload(ctx, doc, `
+        Distributed computing is a field of computer science that studies distributed systems.
+        A distributed system is a system whose components are located on different networked computers.
+        All the computers work together to achieve some common goal.
+        Distributed systems hide the fact that hardware and software components are distributed from the user.
+    `)
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    // Search across all shards using scatter-gather
+    results, err := ds.Search(ctx, "distributed systems computing", index.DefaultSearchOptions(5))
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    for i, r := range results {
+        fmt.Printf("[%d] score=%.4f: %s...\\n", i+1, r.Score, r.Chunk.Content[:80])
+    }
+}
+```
+
+### How It Works
+
+**Consistent Hashing**: Data is distributed across nodes using a consistent hash ring with virtual nodes. This ensures minimal data movement when nodes are added or removed.
+
+**Sharding**: Documents are automatically split into chunks and distributed across shards. Each shard is assigned to a node based on consistent hashing.
+
+**Scatter-Gather Search**: When a query is issued, it is fanned out to all active shards in parallel. Results are collected, merged, sorted by relevance, and the top-K results are returned.
+
+**Replication**: Data can be replicated across multiple nodes using configurable strategies:
+- **Primary-Replica**: Data is written to a primary node and replicated to N-1 replica nodes
+- **Quorum**: Data is written to a quorum of nodes (majority)
+- **All-Nodes**: Data is replicated to all online nodes
+
 ## Architecture
 
 ```
@@ -98,6 +178,7 @@ recall/
 ├── bm25/           # BM25 keyword ranking function
 ├── fuse/           # Score fusion: WeightedFusion, RRFFusion
 ├── query/          # Query engine (planned)
+├── distributed/    # Distributed storage: consistent hashing, sharding, scatter-gather search, replication
 └── example/        # Usage examples
 ```
 
@@ -126,6 +207,7 @@ recall/
 - [x] Phase 10: Multi-hop reasoning engine (inference rules, depth-limited path exploration, confidence propagation, natural language query reasoning)
 - [x] Phase 13: Advanced query processing (intent detection, entity extraction, query expansion, adaptive retrieval)
 - [x] Phase 14: LLM integration (pluggable backends, streaming, LLM-assisted extraction)
+- [x] Phase 15: Distributed storage (consistent hashing, sharding, scatter-gather search, replication)
 - [x] Phase 11: Pluggable NER + relation pattern extraction (HeuristicNER with stopword filtering, PatternRelationExtractor)
 - [x] Phase 12: Performance & robustness (context cancellation, SQLite HNSW mirroring, entity extraction heuristics)
 
