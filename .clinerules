@@ -60,8 +60,8 @@ type Store interface {
     Search(ctx context.Context, query string, opts index.SearchOptions) ([]index.SearchResult, error)
     SearchHybrid(ctx context.Context, query string, opts index.SearchOptions) ([]index.SearchResult, error)
     GetChunk(id string) (*core.Chunk, bool)
-    DeleteChunk(id string) error
-    DeleteDocument(docID string) error
+    DeleteChunk(ctx context.Context, id string) error
+    DeleteDocument(ctx context.Context, docID string) error
     Count() int
     Namespaces() []string
     Close() error

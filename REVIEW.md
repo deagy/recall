@@ -10,7 +10,7 @@ _Reviewed: 2026-07-18 · Scope: full codebase (~25.7k LOC, 18 packages)_
 | `go vet ./...` | ✅ clean |
 | `go test ./... -count=1` | ✅ all pass (706 test funcs, ~13.7k test LOC) |
 | `gofmt -l .` | ✅ clean (sweep committed 2026-08-17, 12 files) |
-| Coverage ≥80% target | ❌ 6 packages below (see table) |
+| Coverage ≥80% target | ✅ all 14 packages above (re-measured 2026-08-17) |
 | CI (`.github/workflows/go.yml`) | ✅ fixed 2026-08-17 — vet, gofmt gate, `-race` tests, smoke bench |
 
 **Coverage vs. the >80% target** — ✅ *All 14 packages above target (re-measured 2026-08-17):*
@@ -116,16 +116,19 @@ contribution a constant. A dead, identically-buggy `fuseScores` helper was remov
   has no namespace field; `MemoryStore.Upload` uses `ns := s.config.Namespace`, so the
   `indexes` map always holds exactly one entry. **Decision: correct the README** (done —
   the feature bullet now reads "Namespaces — one store instance per namespace").
-  Per-document namespaces remain a *proposed feature* (would need a `Document.Namespace`
-  field, namespace-routed Upload, cross-namespace Search semantics) — out of scope for
-  this review pass.
+  *Superseded 2026-08-18:* per-document namespaces are now **implemented**
+  (`core.Document.Namespace` overrides the store default; uploads route to that
+  namespace; search spans all namespaces in a store — see `96a3446`).
 - **~~`_ = idx.Delete(...)`~~ at `store/memory.go:313`** — *Fixed 2026-08-17 (bug 6):*
   `DeleteDocument` now captures and returns the first `Delete` error.
   **~~Wrong sentinel for nil document~~** — *Fixed 2026-08-17:* new
   `core.ErrInvalidDocument` is returned by both stores' `Upload` for a nil doc
   (empty content still maps to `ErrInvalidChunk`); assertions updated.
-- **`context.Background()` in user-facing paths** — `store/memory.go:289,313` and
-  `store/sqlite.go:475-504` discard the caller's context.
+- **~~`context.Background()` in user-facing paths~~ — *Fixed 2026-08-18 (`57ba253`):***
+  the `store.Store` interface now takes `ctx` on `DeleteChunk`/`DeleteDocument`
+  (breaking change, accepted); `MemoryStore` threads it to `index.Delete` and
+  `SQLiteStore` to `BeginTx`/`ExecContext`, so no user-facing path discards the
+  caller's context anymore.
 - **~~Hand-rolled mocks in production packages~~ — *Fixed 2026-08-17:*** the six
   `mockery`-generated files (`store/mock_Store.go`, `store/mock_GraphStore.go`,
   `store/mock_GraphPersistence.go`, `core/mock_Value.go`, `chunker/mock_Chunker.go`,
@@ -244,15 +247,17 @@ contribution a constant. A dead, identically-buggy `fuseScores` helper was remov
    ~~raise `store`/`llm`/`distributed` coverage~~ ✅ *Done 2026-08-17* — **all 14 packages
    now above the 80% target** (`llm` 40.2→86.8 via httptest backend suites,
    `distributed` 57.5→90.9, `reasoning` 74.9→96.4, `index` 75.5→95.5);
-   ~~decide multi-namespace~~ ✅ *Decided 2026-08-17* (README corrected; per-document
-   namespaces deferred as a proposed feature). **Housekeeping complete.**
+   ~~decide multi-namespace~~ ✅ *Decided 2026-08-17, implemented 2026-08-18*
+   (README corrected; `Document.Namespace` per-document routing — `96a3446`).
+   **Housekeeping complete.**
 
 ---
 
-## ✅ Done — summary of the fix pass (2026-07-18 → 2026-08-17)
+## ✅ Done — summary of the fix pass (2026-07-18 → 2026-08-18)
 
-All seven critical bugs, all actionable medium issues, and all housekeeping items are
-closed. Commit map (`git log --oneline dfebe63..HEAD`):
+All seven critical bugs, all actionable medium issues, all housekeeping items, and
+all three previously-deferred still-open items are closed. Commit map
+(`git log --oneline dfebe63..HEAD`):
 
 | Commit | Item(s) closed |
 |---|---|
@@ -268,13 +273,11 @@ closed. Commit map (`git log --oneline dfebe63..HEAD`):
 | `60a983d` | Mediums — HNSW RNG → `math/rand/v2` PCG; `core.ErrInvalidDocument` sentinel |
 | `29608e3` | Mediums — `.clinerules` module path, README HNSW claim, `coverage.out` gitignored |
 | `163e6f2` | Mediums + housekeeping — HNSWThreshold configurable; hierarchy self-loop inference bug fixed; all 14 packages >80% coverage; five more dead mocks removed; multi-namespace README decision |
+| `57ba253` | **Still-open #1 + #3** — *Breaking:* `Store.DeleteChunk`/`DeleteDocument` now take `context.Context` (threaded through all stores; no user-facing path discards the caller's ctx); `DistributedStore.DeleteDocument` implemented via new `ShardManager.DeleteDocument` (removes matching `DocumentRef` chunks across all shards incl. replicas; `core.ErrNotFound` when absent) |
+| `96a3446` | **Still-open #2** — per-document namespace routing: `core.Document.Namespace` override in Memory + SQLite stores; SQLite vector search spans all namespaces in the store (consistent with MemoryStore, HNSW path, FTS5 side) |
 
-**Still open (intentionally):**
-- `context.Background()` in delete paths — the `store.Store` interface itself has no
-  `ctx` parameter on `DeleteChunk`/`DeleteDocument`; fixing requires a public API change
-  (decision needed, not a local fix).
-- Per-document namespaces — proposed feature, not a bug (see medium item).
-- `DistributedStore.DeleteDocument` — still a `TODO` no-op (pre-existing; the store
-  tracks no doc→chunk mapping). Flagged here so it isn't mistaken for covered.
+**Still open (intentionally):** *none* — all three previously-deferred items were
+closed on 2026-08-18 (context-aware delete API `57ba253`, `DistributedStore.DeleteDocument`
+`57ba253`, per-document namespaces `96a3446`). The review plan is fully complete.
 
 
