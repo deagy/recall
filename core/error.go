@@ -12,6 +12,9 @@ var (
 	// ErrInvalidChunk is returned when a chunk has invalid content.
 	ErrInvalidChunk = errors.New("recall: invalid chunk")
 
+	// ErrInvalidDocument is returned when a document is missing or invalid.
+	ErrInvalidDocument = errors.New("recall: invalid document")
+
 	// ErrInvalidEmbedding is returned when an embedding has invalid dimensions.
 	ErrInvalidEmbedding = errors.New("recall: invalid embedding")
 

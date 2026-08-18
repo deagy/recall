@@ -190,7 +190,7 @@ func TestSQLiteStore_Upload_NilDoc(t *testing.T) {
 	ctx := context.Background()
 
 	err := s.Upload(ctx, nil, "Some content for testing nil document upload.")
-	assert.ErrorIs(t, err, core.ErrInvalidChunk, "expected ErrInvalidChunk for nil document")
+	assert.ErrorIs(t, err, core.ErrInvalidDocument, "expected ErrInvalidDocument for nil document")
 }
 
 func TestSQLiteStore_MultipleUploads(t *testing.T) {

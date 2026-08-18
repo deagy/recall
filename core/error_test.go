@@ -14,6 +14,7 @@ func TestErrorVariables(t *testing.T) {
 		{"ErrNotFound", ErrNotFound, "recall: not found"},
 		{"ErrDuplicate", ErrDuplicate, "recall: duplicate"},
 		{"ErrInvalidChunk", ErrInvalidChunk, "recall: invalid chunk"},
+		{"ErrInvalidDocument", ErrInvalidDocument, "recall: invalid document"},
 		{"ErrInvalidEmbedding", ErrInvalidEmbedding, "recall: invalid embedding"},
 		{"ErrEmbeddingMismatch", ErrEmbeddingMismatch, "recall: embedding dimension mismatch"},
 		{"ErrNamespaceNotFound", ErrNamespaceNotFound, "recall: namespace not found"},

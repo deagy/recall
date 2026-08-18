@@ -46,7 +46,7 @@ func NewMemoryStore(cfg Config) (*MemoryStore, error) {
 // Upload processes a document: chunks it, embeds the chunks, and indexes them.
 func (s *MemoryStore) Upload(ctx context.Context, doc *core.Document, content string) error {
 	if doc == nil {
-		return core.ErrInvalidChunk
+		return core.ErrInvalidDocument
 	}
 	if content == "" {
 		return core.ErrInvalidChunk

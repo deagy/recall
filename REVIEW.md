@@ -115,8 +115,10 @@ contribution a constant. A dead, identically-buggy `fuseScores` helper was remov
   exactly one entry. Isolated namespaces within one store are not actually supported; users
   must create separate store instances. Decide: implement per-document namespaces or fix README.
 - **~~`_ = idx.Delete(...)`~~ at `store/memory.go:313`** — *Fixed 2026-08-17 (bug 6):*
-  `DeleteDocument` now captures and returns the first `Delete` error. Same file still
-  returns the wrong sentinel (`ErrInvalidChunk` for a nil document, line 52) — open.
+  `DeleteDocument` now captures and returns the first `Delete` error.
+  **~~Wrong sentinel for nil document~~** — *Fixed 2026-08-17:* new
+  `core.ErrInvalidDocument` is returned by both stores' `Upload` for a nil doc
+  (empty content still maps to `ErrInvalidChunk`); assertions updated.
 - **`context.Background()` in user-facing paths** — `store/memory.go:289,313` and
   `store/sqlite.go:475-504` discard the caller's context.
 - **~~Hand-rolled mocks in production packages~~ — *Fixed 2026-08-17:*** the six
@@ -125,8 +127,11 @@ contribution a constant. A dead, identically-buggy `fuseScores` helper was remov
   `chunker/mock_Factory.go`, 791 lines) are gone: the five that were **unused** across
   the repo were deleted; `chunker.MockChunker`'s one consumer (`store/memory_test.go`) now uses a
   local unexported `mockChunker` in the test file. No mock types remain in library API.
-- **`HNSW` RNG** — `rand.New(rand.NewSource(42))` (`index/hnsw.go:315`): deprecated
-  constructor (Go ≥1.20) and a fixed seed gives every index identical layer assignments.
+- **`HNSW` RNG** — ~~`rand.New(rand.NewSource(42))` (`index/hnsw.go:315`): deprecated
+  constructor (Go ≥1.20) and a fixed seed gives every index identical layer assignments.~~
+  *Fixed 2026-08-17:* switched to `math/rand/v2` with `rand.NewPCG(42, 0)` (no deprecated
+  constructors; fixed seed kept for deterministic layer assignment — seed chosen so the
+  `TestHNSW_Recall*` guardrails pass).
 - ✅ **`HNSW.Search`** implemented its own min-heap with O(n) scan + full `sort.Slice` per
   iteration — replaced with `container/heap` via the fix-3 `searchLayer` rewrite.
 - **`GetChunk` returns internal `*core.Chunk` pointers** (both stores) — callers can mutate

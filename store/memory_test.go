@@ -72,7 +72,7 @@ func TestMemoryStore_UploadNilDoc(t *testing.T) {
 	s := newTestStore(t)
 	defer s.Close()
 	err := s.Upload(context.Background(), nil, "content")
-	assert.ErrorIs(t, err, core.ErrInvalidChunk, "expected ErrInvalidChunk for nil doc")
+	assert.ErrorIs(t, err, core.ErrInvalidDocument, "expected ErrInvalidDocument for nil doc")
 }
 
 func TestMemoryStore_UploadEmptyContent(t *testing.T) {
@@ -701,7 +701,7 @@ func TestMemoryStore_Upload_NilDocument(t *testing.T) {
 	defer s.Close()
 
 	err := s.Upload(context.Background(), nil, "Some content for testing nil document upload.")
-	assert.ErrorIs(t, err, core.ErrInvalidChunk, "expected ErrInvalidChunk for nil document")
+	assert.ErrorIs(t, err, core.ErrInvalidDocument, "expected ErrInvalidDocument for nil document")
 }
 
 func TestMemoryStore_Upload_EmptyContent(t *testing.T) {

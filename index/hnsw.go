@@ -6,7 +6,7 @@ import (
 	"container/heap"
 	"context"
 	"math"
-	"math/rand"
+	"math/rand/v2"
 	"sort"
 	"sync"
 
@@ -332,13 +332,15 @@ func NewHNSW(dim int, cfg HNSWConfig) *HNSW {
 	if cfg.EfSearch <= 0 {
 		cfg.EfSearch = 50
 	}
+	// PCG avoids the deprecated v1 NewSource constructor while keeping a
+	// fixed seed so layer assignment stays deterministic across runs.
 	return &HNSW{
 		dim:     dim,
 		cfg:     cfg,
 		entries: make([]int, 0),
 		nodes:   make([]*hnswNode, 0),
 		nodeIdx: make(map[string]int),
-		rng:     rand.New(rand.NewSource(42)),
+		rng:     rand.New(rand.NewPCG(42, 0)),
 	}
 }
 

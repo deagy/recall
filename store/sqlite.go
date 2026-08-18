@@ -124,7 +124,7 @@ END;
 // Upload processes a document: chunks it, embeds the chunks, and stores them in SQLite.
 func (s *SQLiteStore) Upload(ctx context.Context, doc *core.Document, content string) error {
 	if doc == nil {
-		return core.ErrInvalidChunk
+		return core.ErrInvalidDocument
 	}
 	if content == "" {
 		return core.ErrInvalidChunk
