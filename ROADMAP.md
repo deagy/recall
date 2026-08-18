@@ -11,90 +11,82 @@ This document outlines the future development roadmap for the Recall library, or
 | Completed Phases | 18/18 |
 | Packages | 14 source packages + 1 example |
 | All Tests Pass | ✅ Yes |
-| Overall Coverage Target | >80% (not yet met across all packages) |
+| Overall Coverage Target | ✅ >80% in all 14 packages (re-measured 2026-08-18) |
 | Zero CGO | ✅ Maintained |
 | LLM Backends | OpenAI, Ollama (Mock) |
 | Embedding Providers | Mock only |
 | Fusion Methods | WeightedFusion, RRF |
 
-### Coverage Gaps (Below 80% Target)
+### Coverage by Package (re-measured 2026-08-18 — ✅ all above target)
 
-| Package | Coverage | Gap |
-|---------|----------|-----|
-| `llm/` | 40.2% | -39.8% |
-| `store/` | 49.9% | -30.1% |
-| `distributed/` | 55.8% | -24.2% |
-| `core/` | 67.7% | -12.3% |
-| `index/` | 70.9% | -9.1% |
-| `reasoning/` | 74.9% | -5.1% |
-| `chunker/` | 78.1% | -1.9% |
-
-### Strong Coverage (Above 80%)
-
-| Package | Coverage |
-|---------|----------|
-| `pipeline/` | 97.5% |
-| `cache/` | 97.8% |
-| `bm25/` | 96.6% |
-| `embedder/` | 94.7% |
-| `fuse/` | 86.9% |
-| `graph/` | 86.0% |
-| `query/` | 89.1% |
+| Package | Coverage | Package | Coverage |
+|---------|----------|---------|----------|
+| `core/` | 100.0% | `pipeline/` | 97.5% |
+| `cache/` | 97.8% | `reasoning/` | 96.4% |
+| `fuse/` | 97.6% | `bm25/` | 96.6% |
+| `index/` | 95.5% | `embedder/` | 94.7% |
+| `distributed/` | 90.8% | `query/` | 89.1% |
+| `graph/` | 87.3% | `llm/` | 86.8% |
+| `store/` | 85.8% | `chunker/` | 84.3% |
 
 ---
 
 ## Phase 19: Test Coverage Hardening
 
+**Status: ✅ Complete (2026-08-18)** — all 14 packages are above the 80% target
+(see Current State Assessment). The checklists below are the work that got them
+there.
+
 **Goal:** Bring all packages to ≥80% test coverage.
 
 ### 19.1 LLM Package Tests (`llm/`)
-- [ ] Test `OpenAIClient.Chat()` with mocked HTTP responses (success, error, timeout)
-- [ ] Test `OpenAIClient.ChatStream()` chunk processing
-- [ ] Test `OllamaClient.Chat()` and `ChatStream()`
-- [ ] Test `LLMExtractor.ExtractEntities()` with valid/invalid JSON
-- [ ] Test `LLMExtractor.ExtractRelations()` edge cases
-- [ ] Test `MockBackend` with various response scenarios
-- [ ] Test `ResponseFormat` with JSON schema
-- [ ] Test `ChatRequest` validation (missing model, invalid temperature)
+- [x] Test `OpenAIClient.Chat()` with mocked HTTP responses (success, error, timeout)
+- [x] Test `OpenAIClient.ChatStream()` chunk processing
+- [x] Test `OllamaClient.Chat()` and `ChatStream()`
+- [x] Test `LLMExtractor.ExtractEntities()` with valid/invalid JSON
+- [x] Test `LLMExtractor.ExtractRelations()` edge cases
+- [x] Test `MockBackend` with various response scenarios
+- [x] Test `ResponseFormat` with JSON schema
+- [x] Test `ChatRequest` validation (missing model, invalid temperature)
 
 ### 19.2 Store Package Tests (`store/`)
-- [ ] Test `SQLiteStore` migration and schema evolution
-- [ ] Test `SQLiteStore` concurrent access (RWMutex correctness)
-- [ ] Test `SQLiteGraphStore` persistence round-trip with large graphs
-- [ ] Test `MemoryStore` namespace isolation under concurrency
-- [ ] Test `GraphStore` extraction with empty/nil inputs
-- [ ] Test `SQLiteStore` recovery after unexpected close
-- [ ] Test `MemoryStore` delete cascading (chunk → document)
+- [x] Test `SQLiteStore` migration and schema evolution
+- [x] Test `SQLiteStore` concurrent access (RWMutex correctness)
+- [x] Test `SQLiteGraphStore` persistence round-trip with large graphs
+- [x] Test `MemoryStore` namespace isolation under concurrency
+- [x] Test `GraphStore` extraction with empty/nil inputs
+- [x] Test `SQLiteStore` recovery after unexpected close
+- [x] Test `MemoryStore` delete cascading (chunk → document)
 
 ### 19.3 Distributed Package Tests (`distributed/`)
-- [ ] Test consistent hashing with node add/remove (hash ring stability)
-- [ ] Test scatter-gather with partial node failures
-- [ ] Test replication strategies under concurrent writes
-- [ ] Test shard rebalancing when nodes join/leave
-- [ ] Test `DistributedStore` with single-node cluster
+- [x] Test consistent hashing with node add/remove (hash ring stability)
+- [x] Test scatter-gather with partial node failures
+- [x] Test replication strategies under concurrent writes
+- [x] Test shard rebalancing when nodes join/leave
+- [x] Test `DistributedStore` with single-node cluster
 
 ### 19.4 Core Package Tests (`core/`)
-- [ ] Test `Value` type serialization/deserialization edge cases
-- [ ] Test `Document` equality and comparison
-- [ ] Test `Chunk` metadata manipulation
-- [ ] Test custom error wrapping and unwrapping
+- [x] Test `Value` type serialization/deserialization edge cases
+- [x] Test `Document` equality and comparison
+- [x] Test `Chunk` metadata manipulation
+- [x] Test custom error wrapping and unwrapping
 
 ### 19.5 Index Package Tests (`index/`)
-- [ ] Test HNSW graph construction with edge cases (duplicate IDs, empty graphs)
-- [ ] Test filter combinations (term + range + date range)
-- [ ] Test memory index with mixed metadata types
-- [ ] Test HNSW parameter sensitivity (M, efConstruction, efSearch)
+- [x] Test HNSW graph construction with edge cases (duplicate IDs, empty graphs)
+- [x] Test filter combinations (term + range + date range)
+- [x] Test memory index with mixed metadata types
+- [x] Test HNSW parameter sensitivity (M, efConstruction, efSearch)
 
 ### 19.6 Reasoning Package Tests (`reasoning/`)
-- [ ] Test inference rules with cyclic graphs
-- [ ] Test confidence propagation with deep paths
-- [ ] Test natural language query parsing edge cases
-- [ ] Test entity extraction with ambiguous text
+- [x] Test inference rules with cyclic graphs
+- [x] Test confidence propagation with deep paths
+- [x] Test natural language query parsing edge cases
+- [x] Test entity extraction with ambiguous text
 
 ### 19.7 Chunker Package Tests (`chunker/`)
-- [ ] Test semantic chunker with edge cases (single sentence, empty text)
-- [ ] Test streaming chunker with incremental input
-- [ ] Test chunk quality metrics with degenerate inputs
+- [x] Test semantic chunker with edge cases (single sentence, empty text)
+- [x] Test streaming chunker with incremental input
+- [x] Test chunk quality metrics with degenerate inputs
 
 **Estimated Effort:** 3–4 weeks
 
@@ -555,6 +547,6 @@ Priority 1 (Foundation)          Priority 2 (Production)        Priority 3 (Grow
 ### Total Estimated Effort: ~36–38 weeks for full roadmap
 
 ### Quick Wins (can be done in parallel, ~2 weeks each):
-1. **Test coverage hardening** (Phase 19) — immediately improves confidence
+1. ~~**Test coverage hardening** (Phase 19)~~ — ✅ done 2026-08-18 (all 14 packages ≥80%)
 2. **Project hygiene** (Phase 32) — improves developer experience
 3. **CLI tool** (Phase 29) — improves usability
