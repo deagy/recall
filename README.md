@@ -28,7 +28,7 @@ A Go library for building Retrieval-Augmented Generation (RAG) applications. Rec
 - **Advanced Chunking** — `chunker.ParentChildChunker` (child retrieval with parent context expansion), `chunker.DocumentAwareChunker` (strict document-boundary respect), `chunker.AdaptiveChunker` (content-driven chunk sizing)
 - **Multi-Modal** — `embedder.MultiModalEmbedder` (shared text+image vector space), `store.MultiModalStore` (cross-modal search: text queries find images and vice versa), `pipeline.MultiModalPipeline` (mixed text/image RAG context with optional LLM answer)
 - **Reranking** — `reranker` package improves top-k precision with a two-stage coarse→fine stage: `CrossEncoderReranker` (pure-Go ONNX cross-encoder), `SparseReranker` (BM25 re-scoring), `LLMReranker` (LLM-as-judge over an injected `llm.Backend`), `EnsembleReranker` (fuses several rerankers via `fuse`), `LTRanker` (pointwise learning-to-rank with `Fit`), `AdaptiveLTRanker` (feedback-driven adaptation with auto-refit at a configurable threshold), and `Experiment` (A/B testing: NDCG@K, MRR@K, Precision@K, win rate, Welch t-test). Wire any of them into a pipeline with `RAGPipeline.WithReranker(...)` plus `WithCoarseTopK`/`WithRerankTopK`; rerank scores and ranks are attributed on each `index.SearchResult`
-- **Zero CGO** — Pure Go standard library only for core; SQLite via pure Go driver
+- **Zero CGO** — Pure Go standard library only for core; SQLite via pure Go driver. The zero-CGO constraint applies to library code and its dependencies — a test build with `CGO_ENABLED=1` is explicitly allowed where a C compiler is present, since Go's race detector (`go test -race`) links the toolchain's own C runtime (tsan) and does not make the library itself cgo-dependent
 
 ## Quick Start
 

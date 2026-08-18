@@ -47,9 +47,10 @@ recall/
 - **Assertions**: Use `t.Fatalf` for critical failures, `t.Errorf` for non-fatal
 - **Benchmarks**: Include `Benchmark*` functions for performance-sensitive code
 - **Run tests**: `go test ./... -count=1` (disable cache for fresh results)
+- **Race detector**: On hosts with a C compiler, run `CGO_ENABLED=1 go test ./... -race -count=1` (at minimum for packages with shared state). This is explicitly allowed despite the zero-CGO rule: `-race` requires the toolchain to link its own C-written tsan runtime into the test binary, which is a build-toolchain concern, not a library dependency. The zero-CGO constraint governs library code and dependencies only — never add cgo imports or C-dependent modules to production packages
 
 ### Dependencies
-- **Zero CGO** for core functionality
+- **Zero CGO** for core functionality (constraint applies to library code and dependencies; see the race-detector note in Testing Standards)
 - **SQLite**: Use `modernc.org/sqlite` (pure Go driver, no CGO)
 - **Loader extras**: `golang.org/x/net` (HTML parsing) and `ledongthuc/pdf` (PDF text extraction) — both pure Go; DOCX/HTML text extraction otherwise stay stdlib
 - **No external LLM dependencies** — embedders are dependency-injected
@@ -120,7 +121,7 @@ Built-in rules: `TransitiveRule`, `SymmetricRule`, `AntiSymmetricRule`.
 - [ ] Committed with conventional commit message
 
 ## Important Constraints
-- **Never introduce CGO** in core packages
+- **Never introduce CGO** in core packages (building test binaries with `CGO_ENABLED=1` for the race detector is fine — see Testing Standards)
 - **Never hardcode API keys** or external service endpoints
 - **Always use context.Context** for long-running operations
 - **Always handle errors** — never use `_` for error returns
