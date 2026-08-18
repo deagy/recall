@@ -9,7 +9,7 @@ _Reviewed: 2026-07-18 · Scope: full codebase (~25.7k LOC, 18 packages)_
 | `go build ./...` | ✅ passes |
 | `go vet ./...` | ✅ clean |
 | `go test ./... -count=1` | ✅ all pass (706 test funcs, ~13.7k test LOC) |
-| `gofmt -l .` | ❌ **13 files unformatted** (violates project rules) |
+| `gofmt -l .` | ✅ clean (sweep committed 2026-08-17, 12 files) |
 | Coverage ≥80% target | ❌ 6 packages below (see table) |
 | CI (`.github/workflows/go.yml`) | ⚠️ **Bench step fails** — `go test -bench=.` with no package spec errors: `no Go files in ...` |
 
@@ -133,8 +133,9 @@ contribution a constant. A dead, identically-buggy `fuseScores` helper was remov
 
 - **CI**: fix `go test -bench=.` → `go test ./... -bench=. -run=^$` (or drop the step); add
   `go vet ./...`, a `gofmt -l` check, and `go test -race ./...` steps; consider `-count=1`.
-- **13 unformatted files**: `cache/` (5), `chunker/` (2), `distributed/` (4), `graph/` (2) —
-  `gofmt -s -w .` fixes all.
+- **~~13 unformatted files~~ — *Fixed 2026-08-17:*** `cache/` (5), `chunker/` (2), `distributed/` (4), `graph/` (2) —
+  `gofmt -s -w .` fixed all (12 at sweep time; `distributed/cluster.go` had already been
+  reformatted by the fix-4 ring rewrite).
 - **Doc drift**: `.clinerules` says module `github.com/deagy/sdk/recall`; actual go.mod is
   `github.com/deagy/recall`. README "100K+ chunks" claim needs the HNSW fixes to be credible.
 - **`coverage.out`** committed at repo root — build artifact; gitignore it.
@@ -208,7 +209,8 @@ contribution a constant. A dead, identically-buggy `fuseScores` helper was remov
    deleted chunk not resurrected via the keyword side). Stash-verified: both
    end-to-end tests fail against the pre-fix code (memory dropped the keyword-only
    chunk; SQLite "pure BM25" returned a distractor because no FTS table existed).
-6. **Housekeeping** — `gofmt -s -w .`, fix CI bench step, move mocks to test files,
+6. **Housekeeping** — ~~`gofmt -s -w .`~~ ✅ *Done 2026-08-17* (12 files, alignment-only
+   diff, full test suite green); remaining: fix CI bench step, move mocks to test files,
    de-duplicate BM25 + prune on delete, raise `store`/`llm`/`distributed` coverage,
    decide multi-namespace (implement or correct README).
 
