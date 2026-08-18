@@ -28,9 +28,9 @@ func newTestStore(t *testing.T) *MemoryStore {
 	return s
 }
 
-func newTestStoreWithMocks(t *testing.T) (*MemoryStore, *chunker.MockChunker) {
+func newTestStoreWithMocks(t *testing.T) (*MemoryStore, *mockChunker) {
 	t.Helper()
-	mockChunker := new(chunker.MockChunker)
+	mockChunker := new(mockChunker)
 
 	// Default mock behavior: return one chunk
 	dim := 384
@@ -677,7 +677,7 @@ func TestMemoryStore_Upload_DefaultChunker(t *testing.T) {
 }
 
 func TestMemoryStore_Upload_CustomChunker(t *testing.T) {
-	mockChunker := new(chunker.MockChunker)
+	mockChunker := new(mockChunker)
 	mockChunker.On("Chunk", mock.Anything, mock.Anything).Return([]*core.Chunk{
 		{ID: "chunk-0", Content: "test content", DocumentRef: "doc1", Embedding: make([]float32, 384)},
 	}, nil)
@@ -817,4 +817,39 @@ func BenchmarkMemoryStore_Delete(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		s.DeleteChunk("doc-1::chunk-0")
 	}
+}
+
+// mockChunker is a test-only Chunker double (moved here from the
+// previously exported chunker.MockChunker).
+type mockChunker struct {
+	mock.Mock
+}
+
+func (_m *mockChunker) Chunk(doc *core.Document, content string) ([]*core.Chunk, error) {
+	ret := _m.Called(doc, content)
+
+	if len(ret) == 0 {
+		panic("no return value specified for Chunk")
+	}
+
+	var r0 []*core.Chunk
+	var r1 error
+	if rf, ok := ret.Get(0).(func(*core.Document, string) ([]*core.Chunk, error)); ok {
+		return rf(doc, content)
+	}
+	if rf, ok := ret.Get(0).(func(*core.Document, string) []*core.Chunk); ok {
+		r0 = rf(doc, content)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]*core.Chunk)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(*core.Document, string) error); ok {
+		r1 = rf(doc, content)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
 }

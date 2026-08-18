@@ -119,11 +119,12 @@ contribution a constant. A dead, identically-buggy `fuseScores` helper was remov
   returns the wrong sentinel (`ErrInvalidChunk` for a nil document, line 52) — open.
 - **`context.Background()` in user-facing paths** — `store/memory.go:289,313` and
   `store/sqlite.go:475-504` discard the caller's context.
-- **Hand-rolled mocks in production packages** — `store/mock_*.go`, `core/mock_Value.go`,
-  `chunker/mock_*.go`, etc. are non-test files exported as part of the library API (they panic
-  at runtime by design). Move to `_test.go` files or `internal/mocks`; consider gomock
-  generation (`testify/mock` is already a dependency). Moving them to test files also lifts
-  `store`/`chunker`/`core` coverage numbers.
+- **~~Hand-rolled mocks in production packages~~ — *Fixed 2026-08-17:*** the six
+  `mockery`-generated files (`store/mock_Store.go`, `store/mock_GraphStore.go`,
+  `store/mock_GraphPersistence.go`, `core/mock_Value.go`, `chunker/mock_Chunker.go`,
+  `chunker/mock_Factory.go`, 791 lines) are gone: the five that were **unused** across
+  the repo were deleted; `chunker.MockChunker`'s one consumer (`store/memory_test.go`) now uses a
+  local unexported `mockChunker` in the test file. No mock types remain in library API.
 - **`HNSW` RNG** — `rand.New(rand.NewSource(42))` (`index/hnsw.go:315`): deprecated
   constructor (Go ≥1.20) and a fixed seed gives every index identical layer assignments.
 - ✅ **`HNSW.Search`** implemented its own min-heap with O(n) scan + full `sort.Slice` per
@@ -224,6 +225,8 @@ contribution a constant. A dead, identically-buggy `fuseScores` helper was remov
    `s.bm25s` removed; `DeleteChunk`/`DeleteDocument` prune via `MemoryIndex.Delete`;
    regression tests in `index/memory_test.go` + `store/hybrid_fusion_test.go`)*;
    ~~fix CI bench step~~ ✅ *Done 2026-08-17* (vet + gofmt gate + `-race` + smoke bench);
-   remaining: move mocks to test files, raise `store`/`llm`/
+   ~~move mocks to test files~~ ✅ *Done 2026-08-17* (six unused mockery files deleted;
+   `MockChunker` inlined as a test-local double);
+   remaining: raise `store`/`llm`/
    `distributed` coverage, decide multi-namespace (implement or correct README).
 
