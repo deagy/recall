@@ -104,8 +104,8 @@ there.
 - [ ] Dimension validation and caching
 
 ### 20.2 Local Embedding Models (ONNX Runtime)
-- [ ] `ONNXEmbedder` using pure-Go ONNX inference
-- [ ] Support for `all-MiniLM-L6-v2`, `nomic-embed-text`, `bge-small-en-v1.5`
+- [x] `OnnxEmbedder` using pure-Go ONNX inference — `embedder/onnx/` (hand-rolled protobuf wire codec, tensor runtime, ~50-operator executor covering the sentence-transformer operator family) + `embedder/onnx_embedder.go` adapter implementing `embedder.Embedder`, wired into the `Pipeline` failover chain; tokenization is dependency-injected via `TokenizerFunc`
+- [ ] First-party support for `all-MiniLM-L6-v2`, `nomic-embed-text`, `bge-small-en-v1.5` (bundled tokenizers for known exports)
 - [ ] CPU optimization (thread pool, vectorization)
 - [ ] Model download and caching
 

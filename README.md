@@ -5,7 +5,7 @@ A Go library for building Retrieval-Augmented Generation (RAG) applications. Rec
 ## Features
 
 - **Document Chunking** — Pluggable chunking strategies (fixed-size, recursive paragraph/sentence splitting)
-- **Embedding Abstraction** — Dependency-injected embedders (bring your own: OpenAI, local models, or mock)
+- **Embedding Abstraction** — Dependency-injected embedders (bring your own: OpenAI, Cohere, Ollama, local ONNX models, or mock)
 - **Vector Similarity Search** — Cosine similarity with brute-force or HNSW ANN indexing
 - **Metadata Filtering** — Term, range, date range, and custom filters
 - **Hybrid Search** — BM25 keyword + vector score fusion with WeightedFusion or RRF
@@ -19,6 +19,7 @@ A Go library for building Retrieval-Augmented Generation (RAG) applications. Rec
 - **Semantic Chunking** — Similarity-based text splitting, streaming processing, chunk quality metrics, adaptive sizing
 - **Graph Embeddings** — TransE-based entity/relation embeddings, link prediction, entity similarity search, knowledge graph completion, model persistence via `Save`/`Load`
 - **Intelligent Caching** — LRU eviction, TTL-based expiration, query result caching, embedding caching, graph traversal caching, multi-level caching (L1/L2), cache warming
+- **Local ONNX Embeddings** — Pure-Go ONNX inference runtime (`embedder/onnx`) runs sentence-transformer ONNX exports with no CGO and no network; `embedder.OnnxEmbedder` accepts a tokenizer function and drops into the `embedder.Pipeline` failover chain
 - **Zero CGO** — Pure Go standard library only for core; SQLite via pure Go driver
 
 ## Quick Start
@@ -466,7 +467,7 @@ When a value is retrieved from L2, it is automatically promoted to L1 for faster
 recall/
 ├── core/           # Data types: Chunk, Document, Value, errors
 ├── chunker/        # Text chunking: Fixed, Recursive, Semantic, Streaming strategies
-├── embedder/       # Embedding interface + Mock implementation
+├── embedder/       # Embedding interface + Mock, OpenAI, Cohere, Ollama, ONNX (local) + pipeline
 ├── cache/          # Intelligent caching: LRU, TTL, query/embedding/graph caching, multi-level
 ├── index/          # Storage index: Memory (brute-force + HNSW), filters
 ├── store/          # High-level store: Memory + SQLite backends, GraphStore
@@ -511,6 +512,7 @@ recall/
 - [x] Phase 18: Intelligent caching (LRU eviction, TTL expiration, query/embedding/graph traversal caching, multi-level L1/L2, cache warming)
 - [x] Phase 11: Pluggable NER + relation pattern extraction (HeuristicNER with stopword filtering, PatternRelationExtractor)
 - [x] Phase 12: Performance & robustness (context cancellation, SQLite HNSW mirroring, entity extraction heuristics)
+- [x] Phase 20 (partial): Real embedding providers — OpenAI, Cohere, Ollama HTTP providers with retry/backoff; `embedder.Pipeline` failover + `CachingEmbedder`; pure-Go ONNX runtime (`embedder/onnx/`) with `embedder.OnnxEmbedder` for local sentence-transformer inference (no CGO, no network)
 
 ## Roadmap
 
