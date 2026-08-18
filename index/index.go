@@ -17,6 +17,18 @@ type SearchResult struct {
 
 	// Score is the relevance score (higher is more similar).
 	Score float64
+
+	// RerankScore is the fine-rank score assigned by a reranker (higher is
+	// more relevant). It is zero until a reranker has processed this result.
+	RerankScore float64
+
+	// RerankRank is the 1-based position this result occupies after
+	// reranking. It is zero when no reranker has run.
+	RerankRank int
+
+	// Reranker is the name of the reranker that produced RerankScore, for
+	// score attribution. Empty when no reranker has run.
+	Reranker string
 }
 
 // SearchOptions configures a search operation.

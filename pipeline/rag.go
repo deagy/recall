@@ -32,6 +32,9 @@ type RAGPipeline struct {
 	topK             int
 	minScore         float64
 	maxContextTokens int
+	reranker         Reranker
+	coarseTopK       int
+	rerankTopK       int
 }
 
 // NewRAGPipeline creates a new RAG pipeline with the given store and template.
@@ -73,69 +76,82 @@ func (p *RAGPipeline) WithMaxTokens(tokens int) *RAGPipeline {
 }
 
 // Query performs a RAG query: retrieves relevant chunks and assembles a prompt.
+// When a reranker is configured, retrieval is two-stage: a coarse vector pass
+// pulls coarseTopK (or topK) candidates, then the reranker refines them.
 func (p *RAGPipeline) Query(ctx context.Context, question string) (*RAGResponse, error) {
-	// Retrieve relevant chunks
-	opts := index.DefaultSearchOptions(p.topK)
-	opts.MinScore = p.minScore
-
-	results, err := p.store.Search(ctx, question, opts)
+	results, err := p.retrieve(ctx, question, false)
 	if err != nil {
 		return nil, fmt.Errorf("search failed: %w", err)
 	}
-
-	// Assemble context
-	cw := NewContextWindow(p.maxContextTokens)
-	for _, r := range results {
-		cw.AddChunk(*r.Chunk)
-	}
-
-	// Build response
-	resp := &RAGResponse{
-		Context: cw.String(),
-		Sources: results,
-		Tokens:  cw.Tokens(),
-	}
-
-	// Render prompt
-	vars := map[string]interface{}{
-		"Context":  resp.Context,
-		"Question": question,
-	}
-	resp.Answer = p.template.Render(vars)
-
-	return resp, nil
+	return p.buildResponse(question, results), nil
 }
 
-// QueryHybrid performs a RAG query using hybrid search (vector + BM25).
+// QueryHybrid performs a RAG query using hybrid search (vector + BM25), with
+// the same optional two-stage reranking as Query.
 func (p *RAGPipeline) QueryHybrid(ctx context.Context, question string) (*RAGResponse, error) {
-	opts := index.DefaultSearchOptions(p.topK)
-	opts.MinScore = p.minScore
-	opts.Hybrid = true
-	opts.BM25Weight = 0.5
-
-	results, err := p.store.SearchHybrid(ctx, question, opts)
+	results, err := p.retrieve(ctx, question, true)
 	if err != nil {
 		return nil, fmt.Errorf("hybrid search failed: %w", err)
 	}
+	return p.buildResponse(question, results), nil
+}
 
-	// Assemble context
+// retrieve performs the coarse search pass and, when a reranker is set, the
+// fine reranking pass. It honors coarseTopK during retrieval and rerankTopK
+// after reranking.
+func (p *RAGPipeline) retrieve(ctx context.Context, question string, hybrid bool) ([]index.SearchResult, error) {
+	coarseK := p.topK
+	if p.reranker != nil && p.coarseTopK > 0 {
+		coarseK = p.coarseTopK
+	}
+
+	opts := index.DefaultSearchOptions(coarseK)
+	opts.MinScore = p.minScore
+	if hybrid {
+		opts.Hybrid = true
+		opts.BM25Weight = 0.5
+	}
+
+	var results []index.SearchResult
+	var err error
+	if hybrid {
+		results, err = p.store.SearchHybrid(ctx, question, opts)
+	} else {
+		results, err = p.store.Search(ctx, question, opts)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	if p.reranker != nil {
+		results, err = p.reranker.Rerank(ctx, question, results)
+		if err != nil {
+			return nil, fmt.Errorf("rerank failed: %w", err)
+		}
+		if p.rerankTopK > 0 && len(results) > p.rerankTopK {
+			results = results[:p.rerankTopK]
+		}
+	}
+	return results, nil
+}
+
+// buildResponse assembles the context window and renders the prompt from a
+// final, ordered result list.
+func (p *RAGPipeline) buildResponse(question string, results []index.SearchResult) *RAGResponse {
 	cw := NewContextWindow(p.maxContextTokens)
 	for _, r := range results {
 		cw.AddChunk(*r.Chunk)
 	}
 
-	// Build response
 	resp := &RAGResponse{
 		Context: cw.String(),
 		Sources: results,
 		Tokens:  cw.Tokens(),
 	}
 
-	vars := map[string]interface{}{
+	resp.Answer = p.template.Render(map[string]interface{}{
 		"Context":  resp.Context,
 		"Question": question,
-	}
-	resp.Answer = p.template.Render(vars)
-
-	return resp, nil
+	})
+	return resp
 }

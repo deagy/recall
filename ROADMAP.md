@@ -8,10 +8,10 @@ This document outlines the future development roadmap for the Recall library, or
 
 | Metric | Status |
 |--------|--------|
-| Completed Phases | 22 (Phases 1–21, 26) |
-| Packages | 18 source packages + 1 example |
+| Completed Phases | 23 (Phases 1–22, 26) |
+| Packages | 19 source packages + 1 example |
 | All Tests Pass | ✅ Yes |
-| Overall Coverage Target | ✅ >80% in all 18 packages (re-measured 2026-08-18) |
+| Overall Coverage Target | ✅ >80% in all 19 packages (re-measured 2026-08-18) |
 | Zero CGO | ✅ Maintained |
 | LLM Backends | OpenAI, Ollama (Mock) |
 | Embedding Providers | OpenAI, Cohere, Ollama, ONNX (local), Mock |
@@ -30,6 +30,7 @@ This document outlines the future development roadmap for the Recall library, or
 | `graph/` | 87.3% | `llm/` | 86.8% |
 | `store/` | 86.6% | `query/` | 86.3% |
 | `chunker/` | 86.1% | `embedder/onnx/` | 80.2% |
+| `reranker/` | 89.5% |  |  |
 
 ---
 
@@ -170,20 +171,20 @@ there.
 **Goal:** Add cross-encoder reranking for improved retrieval quality.
 
 ### 22.1 Cross-Encoder Rerankers
-- [ ] `reranker.CrossEncoderReranker` — lightweight cross-encoder (pure Go ONNX)
-- [ ] `reranker.SparseReranker` — BM25-based re-scoring
-- [ ] `reranker.LLMReranker` — LLM-as-judge reranking
-- [ ] `reranker.EnsembleReranker` — combine multiple rerankers
+- [x] `reranker.CrossEncoderReranker` — lightweight cross-encoder (pure Go ONNX)
+- [x] `reranker.SparseReranker` — BM25-based re-scoring
+- [x] `reranker.LLMReranker` — LLM-as-judge reranking
+- [x] `reranker.EnsembleReranker` — combine multiple rerankers
 
 ### 22.2 Reranking Pipeline Integration
-- [ ] `pipeline.Reranker` interface
-- [ ] `pipeline.RAGPipeline.WithReranker()` builder
-- [ ] Two-stage retrieval: coarse (vector) → fine (rerank)
-- [ ] Configurable top-K at each stage
-- [ ] Reranking score attribution in `SearchResult`
+- [x] `pipeline.Reranker` interface
+- [x] `pipeline.RAGPipeline.WithReranker()` builder
+- [x] Two-stage retrieval: coarse (vector) → fine (rerank)
+- [x] Configurable top-K at each stage
+- [x] Reranking score attribution in `SearchResult`
 
 ### 22.3 Learning-to-Rank (Future)
-- [ ] `reranker.LTRanker` — simple pointwise LTR model
+- [x] `reranker.LTRanker` — simple pointwise LTR model
 - [ ] Feedback-driven reranker adaptation
 - [ ] A/B testing framework for reranker comparison
 

@@ -27,6 +27,7 @@ A Go library for building Retrieval-Augmented Generation (RAG) applications. Rec
 - **Query Enhancement** — LLM-powered `query.Rewriter`, `query.HyDE` (hypothetical document embeddings), `query.StepBack` (abstraction prompting), `query.SubQueryDecomposer` (LLM-first, heuristic fallback), and `query.Multilingual` (script-based language detection + pluggable translation for multi-query retrieval)
 - **Advanced Chunking** — `chunker.ParentChildChunker` (child retrieval with parent context expansion), `chunker.DocumentAwareChunker` (strict document-boundary respect), `chunker.AdaptiveChunker` (content-driven chunk sizing)
 - **Multi-Modal** — `embedder.MultiModalEmbedder` (shared text+image vector space), `store.MultiModalStore` (cross-modal search: text queries find images and vice versa), `pipeline.MultiModalPipeline` (mixed text/image RAG context with optional LLM answer)
+- **Reranking** — `reranker` package improves top-k precision with a two-stage coarse→fine stage: `CrossEncoderReranker` (pure-Go ONNX cross-encoder), `SparseReranker` (BM25 re-scoring), `LLMReranker` (LLM-as-judge over an injected `llm.Backend`), `EnsembleReranker` (fuses several rerankers via `fuse`), and `LTRanker` (pointwise learning-to-rank with `Fit`). Wire any of them into a pipeline with `RAGPipeline.WithReranker(...)` plus `WithCoarseTopK`/`WithRerankTopK`; rerank scores and ranks are attributed on each `index.SearchResult`
 - **Zero CGO** — Pure Go standard library only for core; SQLite via pure Go driver
 
 ## Quick Start
@@ -486,6 +487,7 @@ recall/
 ├── reasoning/      # Multi-hop reasoning: inference rules, path exploration, confidence propagation
 ├── bm25/           # BM25 keyword ranking function
 ├── fuse/           # Score fusion: WeightedFusion, RRFFusion
+├── reranker/       # Fine ranking: cross-encoder (ONNX), sparse (BM25), LLM-judge, ensemble, pointwise LTR
 ├── query/          # Query engine (planned)
 ├── distributed/    # Distributed storage: consistent hashing, sharding, scatter-gather search, replication
 └── example/        # Usage examples
@@ -525,6 +527,7 @@ recall/
 - [x] Phase 20 (partial): Real embedding providers — OpenAI, Cohere, Ollama HTTP providers with retry/backoff; `embedder.Pipeline` failover + `CachingEmbedder`; pure-Go ONNX runtime (`embedder/onnx/`) with `embedder.OnnxEmbedder` for local sentence-transformer inference (no CGO, no network)
 - [x] Phase 21: Document ingestion — `loader` (text, markdown, CSV, JSON, directory, HTML, PDF, DOCX), `connector` (web, git, S3 with self-contained SigV4, GitHub, database), and `ingest` (pipeline, dedup, validation, progress, batch, incremental)
 - [x] Phase 26: Advanced retrieval — SQ8/PQ quantized indexes, hybrid + metadata + multi-vector indexes, LLM query enhancement (rewrite/HyDE/step-back/sub-query/multilingual), parent-child/document-aware/adaptive chunking, and multi-modal embedding/store/pipeline
+- [x] Phase 22: Reranking — `reranker` package (cross-encoder on the pure-Go ONNX runtime, BM25 sparse re-scoring, LLM-as-judge, ensemble fusion, pointwise learning-to-rank) wired into `pipeline.RAGPipeline` as an optional two-stage coarse→fine stage via `WithReranker`/`WithCoarseTopK`/`WithRerankTopK`, with rerank score attribution on `SearchResult`
 
 ## Roadmap
 
