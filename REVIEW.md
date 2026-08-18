@@ -157,8 +157,14 @@ silently dropped — hybrid degrades to vector search with BM25 re-ranking.
    never see it (tombstone rebuild retained); new `HNSW.Contains`; `SQLiteStore` mirror kept
    in sync on upload and pruned on `DeleteChunk`/`DeleteDocument`. Regression tests:
    `index/memory_hnsw_test.go`, `store/sqlite_hnsw_test.go`, `TestHNSW_Contains`.
-2. **SQLiteStore locking** (bug 4) — wrap `s.chunks`/`s.hnsw` mutations and reads in `s.mu`;
-   add concurrent Upload/Search test.
+2. ✅ **SQLiteStore locking** (bug 4) — *Done 2026-07-18:* `Upload` takes the write lock
+   around mirror/HNSW updates; `searchHNSW` and the `Search` HNSW gate hold the read lock;
+   `buildHNSW` requires the caller to hold it. Concurrency test:
+   `TestSQLiteStore_ConcurrentUploadAndSearch` (4 writers × 300 docs + live reader, crosses
+   the HNSW threshold). The test also surfaced a second defect — fixed in the same change:
+   `:memory:` + pooled connections gave each connection a separate in-memory DB
+   ("no such table: chunks" under concurrency); `NewSQLiteStore` now uses
+   `db.SetMaxOpenConns(1)` — a second, previously unlisted defect caught by the new test.
 3. **Real HNSW construction** (bug 3) — ef-construction neighbor search in `Add`; add recall
    assertion test vs brute force.
 4. **Sorted hash ring + proper removal** (bug 5) — sort `hashRing` after mutation, prune on

@@ -50,6 +50,12 @@ func NewSQLiteStore(cfg Config, dbPath string) (*SQLiteStore, error) {
 		return nil, fmt.Errorf("opening database: %w", err)
 	}
 
+	// Restrict the pool to a single connection: with ":memory:" databases every
+	// pooled connection is a separate database, so the schema created on one
+	// connection would be invisible to the others. A single serialized
+	// connection is also the safe pattern for embedded SQLite writers.
+	db.SetMaxOpenConns(1)
+
 	// Enable WAL mode for better concurrency
 	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
 		db.Close()
@@ -162,7 +168,9 @@ func (s *SQLiteStore) Upload(ctx context.Context, doc *core.Document, content st
 		return fmt.Errorf("committing transaction: %w", err)
 	}
 
-	// Update in-memory copy for HNSW
+	// Update in-memory copy for HNSW under the store lock so concurrent
+	// searches never observe a partially updated mirror.
+	s.mu.Lock()
 	for _, chunk := range chunks {
 		s.chunks[chunk.ID] = chunk
 	}
@@ -179,12 +187,14 @@ func (s *SQLiteStore) Upload(ctx context.Context, doc *core.Document, content st
 			}
 		}
 	}
+	s.mu.Unlock()
 
 	doc.ChunkCount = len(chunks)
 	return nil
 }
 
 // buildHNSW constructs the HNSW graph from in-memory chunks.
+// Callers must hold s.mu (write lock).
 func (s *SQLiteStore) buildHNSW() {
 	s.hnsw = index.NewHNSW(s.embedder.Dimension(), index.DefaultHNSWConfig())
 	for _, chunk := range s.chunks {
@@ -197,6 +207,9 @@ func (s *SQLiteStore) searchHNSW(ctx context.Context, embed []float32, opts inde
 	if opts.TopK <= 0 {
 		opts.TopK = 10
 	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	// Check context before search
 	select {
@@ -244,8 +257,12 @@ func (s *SQLiteStore) Search(ctx context.Context, query string, opts index.Searc
 		return nil, fmt.Errorf("embedding query: %w", err)
 	}
 
-	// Use HNSW for ANN search if available and dataset is large enough
-	if s.hnsw != nil && len(s.chunks) > index.HNSWThreshold {
+	// Use HNSW for ANN search if available and dataset is large enough.
+	// The gate is read under the store lock; searchHNSW acquires it again.
+	s.mu.RLock()
+	useHNSW := s.hnsw != nil && len(s.chunks) > index.HNSWThreshold
+	s.mu.RUnlock()
+	if useHNSW {
 		return s.searchHNSW(ctx, queryEmbed, opts)
 	}
 
