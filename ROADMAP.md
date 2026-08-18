@@ -185,8 +185,8 @@ there.
 
 ### 22.3 Learning-to-Rank (Future)
 - [x] `reranker.LTRanker` — simple pointwise LTR model
-- [ ] Feedback-driven reranker adaptation
-- [ ] A/B testing framework for reranker comparison
+- [x] `reranker.AdaptiveLTRanker` — feedback-driven reranker adaptation (auto-refit at threshold)
+- [x] `reranker.Experiment` — A/B testing framework for reranker comparison (NDCG@K, MRR@K, Precision@K, win rate, Welch t-test)
 
 **Estimated Effort:** 3–4 weeks
 **Priority:** Medium-High (significant quality improvement)
