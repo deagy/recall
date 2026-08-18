@@ -29,7 +29,7 @@ recall/
 ├── reasoning/      # Multi-hop reasoning: inference rules, path exploration, confidence propagation
 ├── bm25/           # BM25 keyword ranking function
 ├── fuse/           # Score fusion: WeightedFusion, RRFFusion
-├── query/          # Query engine (planned)
+├── query/          # Query engine: parser, expander, adaptive, rewrite/HyDE/step-back/sub-query/multilingual
 └── example/        # Usage examples
 ```
 

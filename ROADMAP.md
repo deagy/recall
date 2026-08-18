@@ -1,6 +1,6 @@
 # Recall — Development Roadmap
 
-This document outlines the future development roadmap for the Recall library, organized by priority tiers and target phases. The current codebase has **18 completed phases** covering core RAG functionality (storage, search, chunking, knowledge graphs, reasoning, distributed storage, caching, and LLM integration).
+This document outlines the future development roadmap for the Recall library, organized by priority tiers and target phases. The current codebase has **22 completed phases** covering core RAG functionality (storage, search, chunking, knowledge graphs, reasoning, distributed storage, caching, LLM integration, document ingestion, and advanced retrieval).
 
 ---
 
@@ -8,26 +8,28 @@ This document outlines the future development roadmap for the Recall library, or
 
 | Metric | Status |
 |--------|--------|
-| Completed Phases | 18/18 |
-| Packages | 14 source packages + 1 example |
+| Completed Phases | 22 (Phases 1–21, 26) |
+| Packages | 18 source packages + 1 example |
 | All Tests Pass | ✅ Yes |
-| Overall Coverage Target | ✅ >80% in all 14 packages (re-measured 2026-08-18) |
+| Overall Coverage Target | ✅ >80% in all 18 packages (re-measured 2026-08-18) |
 | Zero CGO | ✅ Maintained |
 | LLM Backends | OpenAI, Ollama (Mock) |
-| Embedding Providers | Mock only |
+| Embedding Providers | OpenAI, Cohere, Ollama, ONNX (local), Mock |
 | Fusion Methods | WeightedFusion, RRF |
 
 ### Coverage by Package (re-measured 2026-08-18 — ✅ all above target)
 
 | Package | Coverage | Package | Coverage |
 |---------|----------|---------|----------|
-| `core/` | 100.0% | `pipeline/` | 97.5% |
+| `core/` | 100.0% | `pipeline/` | 97.4% |
 | `cache/` | 97.8% | `reasoning/` | 96.4% |
 | `fuse/` | 97.6% | `bm25/` | 96.6% |
-| `index/` | 95.5% | `embedder/` | 94.7% |
-| `distributed/` | 90.8% | `query/` | 89.1% |
+| `embedder/` | 91.6% | `ingest/` | 92.7% |
+| `index/` | 91.9% | `loader/` | 90.3% |
+| `distributed/` | 90.8% | `connector/` | 87.5% |
 | `graph/` | 87.3% | `llm/` | 86.8% |
-| `store/` | 85.8% | `chunker/` | 84.3% |
+| `store/` | 86.6% | `query/` | 86.3% |
+| `chunker/` | 86.1% | `embedder/onnx/` | 80.2% |
 
 ---
 
@@ -295,31 +297,33 @@ there.
 
 ## Phase 26: Advanced Retrieval
 
+**Status: ✅ Complete (2026-08-18)** — all four sub-phases implemented and tested (see checklist below).
+
 **Goal:** State-of-the-art retrieval techniques.
 
 ### 26.1 Advanced Indexing
-- [ ] `index.ScalarQuantization` — 8-bit SQ for memory efficiency
-- [ ] `index.ProductQuantization` — PQ for large-scale ANN
-- [ ] `index.HybridIndex` — combine HNSW + BM25 in single index
-- [ ] `index.MetadataIndex` — fast metadata-based filtering index
-- [ ] `index.MultiVector` — multiple embeddings per chunk (query + passage)
+- [x] `index.ScalarQuantization` — 8-bit SQ for memory efficiency (`ScalarQuantizer` + `QuantizedIndex`)
+- [x] `index.ProductQuantization` — PQ for large-scale ANN (`ProductQuantizer` with k-means++ codebooks, ADC search via `PQIndex`)
+- [x] `index.HybridIndex` — combine HNSW + BM25 in single index (vector + BM25 + pluggable fusion, keyword-only hits retained)
+- [x] `index.MetadataIndex` — fast metadata-based filtering index (inverted postings, `Candidates` pre-filter)
+- [x] `index.MultiVector` — multiple embeddings per chunk (query + passage; MaxSim / mean / top-mean aggregation)
 
 ### 26.2 Query Techniques
-- [ ] `query.Rewrite` — LLM-powered query rewriting
-- [ ] `query.HyDE` — Hypothetical Document Embeddings
-- [ ] `query.StepBack` — step-back prompting for better retrieval
-- [ ] `query.SubQuery` — decompose complex queries (already partial)
-- [ ] `query.Multilingual` — multilingual query support
+- [x] `query.Rewrite` — LLM-powered query rewriting (`Rewriter`)
+- [x] `query.HyDE` — Hypothetical Document Embeddings (`HyDE`)
+- [x] `query.StepBack` — step-back prompting for better retrieval (`StepBack`)
+- [x] `query.SubQuery` — decompose complex queries (`SubQueryDecomposer`: LLM-first with heuristic fallback)
+- [x] `query.Multilingual` — multilingual query support (`DetectLanguage` script heuristics + `Multilingual` multi-query expansion via pluggable `Translator`)
 
 ### 26.3 Chunking Advances
-- [ ] `chunker.ParentChild` — parent chunk retrieval with child detail
-- [ ] `chunker.DocumentAware` — respect document boundaries
-- [ ] `chunker.Adaptive` — auto-tune chunk size based on content
+- [x] `chunker.ParentChild` — parent chunk retrieval with child detail (`ParentChildChunker` with parent cache + `ExpandChunks`)
+- [x] `chunker.DocumentAware` — respect document boundaries (`DocumentAwareChunker`, no cross-boundary chunks/overlap)
+- [x] `chunker.Adaptive` — auto-tune chunk size based on content (`AdaptiveChunker`, sentence-length driven)
 
 ### 26.4 Multi-Modal
-- [ ] `embedder.MultiModalEmbedder` — text + image embeddings
-- [ ] `store.MultiModalStore` — store and retrieve across modalities
-- [ ] `pipeline.MultiModalPipeline` — multi-modal RAG
+- [x] `embedder.MultiModalEmbedder` — text + image embeddings (interface + deterministic `MockMultiModal`)
+- [x] `store.MultiModalStore` — store and retrieve across modalities (cross-modal `SearchText`/`SearchImage`)
+- [x] `pipeline.MultiModalPipeline` — multi-modal RAG (mixed text/image context assembly, optional LLM backend)
 
 **Estimated Effort:** 5–6 weeks
 **Priority:** Medium-Low

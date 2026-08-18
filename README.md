@@ -23,6 +23,10 @@ A Go library for building Retrieval-Augmented Generation (RAG) applications. Rec
 - **Document Loaders** — `loader` package reads text, markdown (heading sections), CSV (column mapping), JSON (nested field paths), HTML (visible-text extraction), PDF (plain-text extraction), DOCX (OOXML paragraph extraction), and whole directories into a uniform `Document` representation ready for upload
 - **Source Connectors** — `connector` package fetches documents from the web (rate-limited), git repositories, S3-compatible buckets (self-contained SigV4, MinIO-friendly), GitHub repos/issues, and SQL tables
 - **Ingestion Pipeline** — `ingest` package orchestrates load → dedup → validation → transform → upload with thread-safe progress callbacks, parallel batch ingestion across sources, and incremental (delta) re-ingestion via persisted content hashes
+- **Advanced Indexing** — 8-bit scalar quantization (`index.ScalarQuantizer`/`QuantizedIndex`, 4x memory reduction), product quantization (`index.ProductQuantizer`/`PQIndex`, k-means++ codebooks with ADC search), combined vector+BM25 `index.HybridIndex` with pluggable fusion, inverted `index.MetadataIndex` pre-filter, and `index.MultiVectorIndex` for multiple embeddings per chunk (MaxSim / mean / top-mean)
+- **Query Enhancement** — LLM-powered `query.Rewriter`, `query.HyDE` (hypothetical document embeddings), `query.StepBack` (abstraction prompting), `query.SubQueryDecomposer` (LLM-first, heuristic fallback), and `query.Multilingual` (script-based language detection + pluggable translation for multi-query retrieval)
+- **Advanced Chunking** — `chunker.ParentChildChunker` (child retrieval with parent context expansion), `chunker.DocumentAwareChunker` (strict document-boundary respect), `chunker.AdaptiveChunker` (content-driven chunk sizing)
+- **Multi-Modal** — `embedder.MultiModalEmbedder` (shared text+image vector space), `store.MultiModalStore` (cross-modal search: text queries find images and vice versa), `pipeline.MultiModalPipeline` (mixed text/image RAG context with optional LLM answer)
 - **Zero CGO** — Pure Go standard library only for core; SQLite via pure Go driver
 
 ## Quick Start
@@ -520,6 +524,7 @@ recall/
 - [x] Phase 12: Performance & robustness (context cancellation, SQLite HNSW mirroring, entity extraction heuristics)
 - [x] Phase 20 (partial): Real embedding providers — OpenAI, Cohere, Ollama HTTP providers with retry/backoff; `embedder.Pipeline` failover + `CachingEmbedder`; pure-Go ONNX runtime (`embedder/onnx/`) with `embedder.OnnxEmbedder` for local sentence-transformer inference (no CGO, no network)
 - [x] Phase 21: Document ingestion — `loader` (text, markdown, CSV, JSON, directory, HTML, PDF, DOCX), `connector` (web, git, S3 with self-contained SigV4, GitHub, database), and `ingest` (pipeline, dedup, validation, progress, batch, incremental)
+- [x] Phase 26: Advanced retrieval — SQ8/PQ quantized indexes, hybrid + metadata + multi-vector indexes, LLM query enhancement (rewrite/HyDE/step-back/sub-query/multilingual), parent-child/document-aware/adaptive chunking, and multi-modal embedding/store/pipeline
 
 ## Roadmap
 
