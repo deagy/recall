@@ -100,11 +100,11 @@ there.
 **Goal:** Support production embedding models beyond the mock embedder.
 
 ### 20.1 OpenAI Embeddings
-- [ ] `OpenAIEmbedder` implementing `embedder.Embedder`
-- [ ] Support for `text-embedding-3-small`, `text-embedding-3-large`, `text-embedding-ada-002`
-- [ ] Batch embedding with automatic batching
-- [ ] Rate limiting and retry with exponential backoff
-- [ ] Dimension validation and caching
+- [x] `OpenAIEmbedder` implementing `embedder.Embedder`
+- [x] Support for `text-embedding-3-small`, `text-embedding-3-large`, `text-embedding-ada-002`
+- [x] Batch embedding with automatic batching
+- [x] Rate limiting and retry with exponential backoff
+- [x] Dimension validation and caching
 
 ### 20.2 Local Embedding Models (ONNX Runtime)
 - [x] `OnnxEmbedder` using pure-Go ONNX inference — `embedder/onnx/` (hand-rolled protobuf wire codec, tensor runtime, ~50-operator executor covering the sentence-transformer operator family) + `embedder/onnx_embedder.go` adapter implementing `embedder.Embedder`, wired into the `Pipeline` failover chain; tokenization is dependency-injected via `TokenizerFunc`
@@ -113,19 +113,19 @@ there.
 - [ ] Model download and caching
 
 ### 20.3 Cohere Embeddings
-- [ ] `CohereEmbedder` for `embed-english-v3.0`, `embed-multilingual-v3.0`
-- [ ] Input type support (search_document, search_query)
-- [ ] Truncation strategies
+- [x] `CohereEmbedder` for `embed-english-v3.0`, `embed-multilingual-v3.0`
+- [x] Input type support (search_document, search_query)
+- [x] Truncation strategies
 
 ### 20.4 Hugging Face Transformers (Go)
-- [ ] `HFEmbedder` using pure-Go transformer runtime
-- [ ] Support for sentence-transformers models
+- [x] `OnnxEmbedder` runs sentence-transformers ONNX exports directly (pure-Go, no CGO); HF `safetensors`/GPTQ/AWQ-native loading out of scope
+- [x] Support for sentence-transformers models (via ONNX export + injected tokenizer)
 - [ ] Quantized model support (GPTQ, AWQ)
 
 ### 20.5 Embedding Pipeline
-- [ ] `embedder.Pipeline` for chaining embedders (e.g., retry on different provider)
-- [ ] `embedder.CachingEmbedder` wrapper (integrate with cache package)
-- [ ] Embedding dimension auto-detection
+- [x] `embedder.Pipeline` for chaining embedders (e.g., retry on different provider)
+- [x] `embedder.CachingEmbedder` wrapper (integrate with cache package)
+- [x] Embedding dimension auto-detection
 
 **Estimated Effort:** 4–5 weeks
 **Priority:** High (critical for production use)
