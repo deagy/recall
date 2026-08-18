@@ -1,6 +1,8 @@
 package graph
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -138,6 +140,7 @@ func TestTransE_SaveLoad(t *testing.T) {
 	// Train on some triples
 	triples := []*Triple{
 		{Head: "alice", Relation: "knows", Tail: "bob"},
+		{Head: "bob", Relation: "works_at", Tail: "acme"},
 	}
 
 	opts := TrainOptions{
@@ -146,18 +149,93 @@ func TestTransE_SaveLoad(t *testing.T) {
 		BatchSize: 1,
 	}
 
-	model.Train(triples, opts)
-
-	// Save should not error (placeholder implementation)
-	err := model.Save("/tmp/test_embeddings.bin")
-	if err != nil {
-		t.Errorf("Save() error = %v", err)
+	if err := model.Train(triples, opts); err != nil {
+		t.Fatalf("Train() error = %v", err)
 	}
 
-	// Load should not error (placeholder implementation)
-	err = model.Load("/tmp/test_embeddings.bin")
+	path := filepath.Join(t.TempDir(), "embeddings.json")
+	if err := model.Save(path); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	// The file must actually contain a snapshot (not a no-op placeholder).
+	data, err := os.ReadFile(path)
 	if err != nil {
-		t.Errorf("Load() error = %v", err)
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if len(data) == 0 {
+		t.Fatal("Save() produced an empty file")
+	}
+
+	// Load into a fresh model with the same dimension and verify the
+	// embeddings round-trip exactly.
+	loaded := NewTransE(NewEmbeddingStore(32))
+	if err := loaded.Load(path); err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if got := loaded.store.EntityCount(); got != store.EntityCount() {
+		t.Errorf("entity count after load = %d, want %d", got, store.EntityCount())
+	}
+	if got := loaded.store.RelationCount(); got != store.RelationCount() {
+		t.Errorf("relation count after load = %d, want %d", got, store.RelationCount())
+	}
+
+	assertVecsEqual := func(name string, a, b []float32) {
+		t.Helper()
+		if len(a) != len(b) {
+			t.Errorf("%s: length = %d, want %d", name, len(a), len(b))
+			return
+		}
+		for i := range a {
+			if a[i] != b[i] {
+				t.Errorf("%s[%d] = %v, want %v", name, i, a[i], b[i])
+				return
+			}
+		}
+	}
+
+	for id := range store.EntityEmbeddings {
+		orig, ok := store.GetEntityEmbedding(id)
+		if !ok {
+			t.Fatalf("entity %q missing from original store", id)
+		}
+		got, err := loaded.EmbedEntity(id)
+		if err != nil {
+			t.Fatalf("EmbedEntity(%q) after load error = %v", id, err)
+		}
+		assertVecsEqual("entity "+id, got, orig)
+	}
+	for rel := range store.RelationEmbeddings {
+		orig, ok := store.GetRelationEmbedding(rel)
+		if !ok {
+			t.Fatalf("relation %q missing from original store", rel)
+		}
+		got, err := loaded.EmbedRelation(rel)
+		if err != nil {
+			t.Fatalf("EmbedRelation(%q) after load error = %v", rel, err)
+		}
+		assertVecsEqual("relation "+rel, got, orig)
+	}
+
+	// Load must reject a dimension mismatch.
+	wrongDim := NewTransE(NewEmbeddingStore(16))
+	if err := wrongDim.Load(path); err == nil {
+		t.Error("Load() with mismatched dimension = nil, want error")
+	}
+
+	// Load must reject a missing file.
+	if err := loaded.Load(filepath.Join(t.TempDir(), "nope.json")); err == nil {
+		t.Error("Load() of missing file = nil, want error")
+	}
+
+	// Load must reject corrupt content.
+	corrupt := filepath.Join(t.TempDir(), "corrupt.json")
+	if err := os.WriteFile(corrupt, []byte("{not json"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	if err := loaded.Load(corrupt); err == nil {
+		t.Error("Load() of corrupt file = nil, want error")
 	}
 }
 

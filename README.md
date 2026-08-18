@@ -17,7 +17,7 @@ A Go library for building Retrieval-Augmented Generation (RAG) applications. Rec
 - **Namespaces** — Isolated knowledge spaces (one store instance per namespace; a document can override the store's namespace via `core.Document.Namespace`; search spans all namespaces in a store)
 - **Distributed Storage** — Consistent hashing, automatic sharding, scatter-gather search, replication strategies (primary-replica, quorum, all-nodes)
 - **Semantic Chunking** — Similarity-based text splitting, streaming processing, chunk quality metrics, adaptive sizing
-- **Graph Embeddings** — TransE-based entity/relation embeddings, link prediction, entity similarity search, knowledge graph completion
+- **Graph Embeddings** — TransE-based entity/relation embeddings, link prediction, entity similarity search, knowledge graph completion, model persistence via `Save`/`Load`
 - **Intelligent Caching** — LRU eviction, TTL-based expiration, query result caching, embedding caching, graph traversal caching, multi-level caching (L1/L2), cache warming
 - **Zero CGO** — Pure Go standard library only for core; SQLite via pure Go driver
 

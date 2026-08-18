@@ -1,9 +1,11 @@
 package graph
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"math/rand"
+	"os"
 	"sync"
 )
 
@@ -227,14 +229,110 @@ func (t *TransE) Dimension() int {
 	return t.opts.Dimension
 }
 
-// Save saves the embeddings to a file (placeholder for future implementation).
+// transEFile is the on-disk representation of a trained TransE model.
+type transEFile struct {
+	Dimension    int                  `json:"dimension"`
+	Entities     map[string][]float32 `json:"entities"`
+	Relations    map[string][]float32 `json:"relations"`
+	EntityList   []string             `json:"entity_list"`
+	RelationList []string             `json:"relation_list"`
+}
+
+// Save persists the current entity and relation embeddings to the given path
+// as a JSON document (transEFile). Vectors are copied so the file is a stable
+// snapshot of the model at the time of the call.
 func (t *TransE) Save(path string) error {
-	// TODO: Implement serialization
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	file := transEFile{
+		Dimension:    t.store.Dimension,
+		Entities:     make(map[string][]float32, len(t.store.EntityEmbeddings)),
+		Relations:    make(map[string][]float32, len(t.store.RelationEmbeddings)),
+		EntityList:   make([]string, len(t.store.EntityList)),
+		RelationList: make([]string, len(t.store.RelationList)),
+	}
+	copy(file.EntityList, t.store.EntityList)
+	copy(file.RelationList, t.store.RelationList)
+	for id, emb := range t.store.EntityEmbeddings {
+		cp := make([]float32, len(emb))
+		copy(cp, emb)
+		file.Entities[id] = cp
+	}
+	for id, emb := range t.store.RelationEmbeddings {
+		cp := make([]float32, len(emb))
+		copy(cp, emb)
+		file.Relations[id] = cp
+	}
+
+	data, err := json.MarshalIndent(file, "", "  ")
+	if err != nil {
+		return fmt.Errorf("transE: marshal: %w", err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return fmt.Errorf("transE: write %s: %w", path, err)
+	}
 	return nil
 }
 
-// Load loads embeddings from a file (placeholder for future implementation).
+// Load replaces the current embeddings with those stored at the given path
+// (a file previously written by Save). The file must have the same embedding
+// dimension as the underlying store; every listed entity/relation must have a
+// well-formed vector.
 func (t *TransE) Load(path string) error {
-	// TODO: Implement deserialization
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("transE: read %s: %w", path, err)
+	}
+	var file transEFile
+	if err := json.Unmarshal(data, &file); err != nil {
+		return fmt.Errorf("transE: unmarshal: %w", err)
+	}
+	if file.Dimension != t.store.Dimension {
+		return fmt.Errorf("transE: dimension mismatch: file has %d, store has %d", file.Dimension, t.store.Dimension)
+	}
+
+	if err := t.loadVectors("entity", file.EntityList, file.Entities, file.Dimension,
+		func(emb map[string][]float32, idx map[string]int, list []string) {
+			t.store.EntityEmbeddings = emb
+			t.store.EntityIndex = idx
+			t.store.EntityList = list
+		}); err != nil {
+		return err
+	}
+	return t.loadVectors("relation", file.RelationList, file.Relations, file.Dimension,
+		func(emb map[string][]float32, idx map[string]int, list []string) {
+			t.store.RelationEmbeddings = emb
+			t.store.RelationIndex = idx
+			t.store.RelationList = list
+		})
+}
+
+// loadVectors validates one vector set from a transEFile and installs it in
+// the store (via the set callback), preserving the file's list order as the
+// index ordering.
+func (t *TransE) loadVectors(kind string, ids []string, vecs map[string][]float32, dim int,
+	set func(emb map[string][]float32, idx map[string]int, list []string)) error {
+	embeddings := make(map[string][]float32, len(ids))
+	index := make(map[string]int, len(ids))
+	list := make([]string, 0, len(ids))
+	for _, id := range ids {
+		emb, ok := vecs[id]
+		if !ok {
+			return fmt.Errorf("transE: %s %q listed in file but has no vector", kind, id)
+		}
+		if len(emb) != dim {
+			return fmt.Errorf("transE: %s %q has %d dims, want %d", kind, id, len(emb), dim)
+		}
+		cp := make([]float32, len(emb))
+		copy(cp, emb)
+		list = append(list, id)
+		index[id] = len(list) - 1
+		embeddings[id] = cp
+	}
+	set(embeddings, index, list)
 	return nil
 }
