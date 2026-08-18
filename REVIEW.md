@@ -36,7 +36,7 @@ subsequent `Add`/`Upload` goes into `m.chunks` and BM25 but **never into the HNS
 new documents become invisible to vector search — the realistic case for a growing corpus.
 **Fix:** in `Add`/`AddBatch`, when `hnswEnabled`, also call `m.hnsw.Add(id, embedding)`.
 
-### ~~2. Deleted chunks are still returned from HNSW search~~ — *Fixed 2026-07-18 (see action plan #1):*
+### ~~2. Deleted chunks are still returned from HNSW search~~ —  *Fixed 2026-08-17 (see action plan #1):*
 `index/hnsw.go:105-124` (`Delete`), `212-224` (`searchHNSW`)
 In HNSW mode `Delete` only sets a tombstone (rebuild fires only at >20% tombstone ratio),
 but `searchHNSW` never checks `m.deleted[id]` and `Delete` doesn't remove the chunk from
@@ -45,7 +45,7 @@ still see them too.
 **Fix:** filter `m.deleted[id]` in `searchHNSW` and `GetChunk`; consider removing from
 `m.chunks` immediately.
 
-### ~~3. HNSW graph construction is not real HNSW~~ — *Fixed 2026-07-18 (see action plan #3):*
+### ~~3. HNSW graph construction is not real HNSW~~ —  *Fixed 2026-08-17 (see action plan #3):*
 `index/hnsw.go:374-436` (`HNSW.Add`)
 During construction, `candidates` is seeded with a **single entry node** and never expanded —
 there is no greedy/beam search for ef-construction neighbors. Each node gets at most 1
@@ -55,7 +55,7 @@ they are small and never assert a recall threshold against brute force.
 **Fix:** implement proper ef-construction neighbor search in `HNSW.Add`; add a recall
 regression test (e.g. top-100 recall ≥ 0.9 vs brute force on 10k random vectors).
 
-### ~~4. `SQLiteStore` has data races~~ — *Fixed 2026-07-18 (see action plan #2):*
+### ~~4. `SQLiteStore` has data races~~ —  *Fixed 2026-08-17 (see action plan #2):*
 `store/sqlite.go`
 `s.mu` is declared but `Upload` writes `s.chunks` (~line 167) and `s.hnsw` (line 172 via
 `buildHNSW`) **without the lock**, while `Search`/`searchHNSW` read both lock-free (only
@@ -64,7 +64,7 @@ Concurrent `Upload` + `Search` is a genuine race.
 **Fix:** guard all `s.chunks`/`s.hnsw` access with `s.mu`; add a concurrent
 Upload/Search test (run with `-race` in CI).
 
-### ~~5. Consistent-hash ring is broken~~ — *Fixed 2026-07-18 (see action plan #4):*
+### ~~5. Consistent-hash ring is broken~~ —  *Fixed 2026-08-17 (see action plan #4):*
 `distributed/cluster.go`
 - `hashRing` is an append-only slice that is **never sorted**; the ring walks in
   `GetReplicaNodes`/`GetNodeForChunk` do `if vHash >= hash`, which only works on a sorted ring.
@@ -246,4 +246,35 @@ contribution a constant. A dead, identically-buggy `fuseScores` helper was remov
    `distributed` 57.5→90.9, `reasoning` 74.9→96.4, `index` 75.5→95.5);
    ~~decide multi-namespace~~ ✅ *Decided 2026-08-17* (README corrected; per-document
    namespaces deferred as a proposed feature). **Housekeeping complete.**
+
+---
+
+## ✅ Done — summary of the fix pass (2026-07-18 → 2026-08-17)
+
+All seven critical bugs, all actionable medium issues, and all housekeeping items are
+closed. Commit map (`git log --oneline dfebe63..HEAD`):
+
+| Commit | Item(s) closed |
+|---|---|
+| `66bdb9f` | **Bugs 1+2** — HNSW incremental add after activation; tombstone filtering (deleted chunks no longer returned); `Contains`; SQLite mirror sync/prune |
+| `6021560` | **Bug 4** — `SQLiteStore` races: write lock on Upload, RLock on search paths, `SetMaxOpenConns(1)` |
+| `525bc9f` | **Bug 3** — HNSW rewritten (ef beam search, `linkBack` fix, entry-point handling) + recall tests |
+| `753928a` | **Bug 5** — sorted consistent-hash ring, `GetReplicaNodes` wrap-around, idempotent `Rebalance` |
+| `80f26c6` | **Bug 7** — hybrid fusion: `fuseMap` lookup, real FTS5 pipeline + triggers, `fuseFTS5Results` fixed, `fuseScores` removed |
+| `7201c31` | Housekeeping — `gofmt -s -w .` sweep (12 files) |
+| `ebba208` | **Bug 6** — single BM25 keyword source per namespace, pruned on delete (+ `DeleteDocument` error propagation) |
+| `826726b` | Housekeeping — CI: vet, gofmt gate, `-race` tests, fixed smoke-bench step |
+| `28e93a8` | Housekeeping — six dead mockery files removed from the library API |
+| `60a983d` | Mediums — HNSW RNG → `math/rand/v2` PCG; `core.ErrInvalidDocument` sentinel |
+| `29608e3` | Mediums — `.clinerules` module path, README HNSW claim, `coverage.out` gitignored |
+| `163e6f2` | Mediums + housekeeping — HNSWThreshold configurable; hierarchy self-loop inference bug fixed; all 14 packages >80% coverage; five more dead mocks removed; multi-namespace README decision |
+
+**Still open (intentionally):**
+- `context.Background()` in delete paths — the `store.Store` interface itself has no
+  `ctx` parameter on `DeleteChunk`/`DeleteDocument`; fixing requires a public API change
+  (decision needed, not a local fix).
+- Per-document namespaces — proposed feature, not a bug (see medium item).
+- `DistributedStore.DeleteDocument` — still a `TODO` no-op (pre-existing; the store
+  tracks no doc→chunk mapping). Flagged here so it isn't mistaken for covered.
+
 
