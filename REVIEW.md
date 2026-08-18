@@ -151,7 +151,12 @@ silently dropped — hybrid degrades to vector search with BM25 re-ranking.
 
 ## Prioritized action plan
 
-1. **HNSW incremental add + tombstone filtering** (bugs 1, 2) — small changes, big correctness win.
+1. ✅ **HNSW incremental add + tombstone filtering** (bugs 1, 2) — *Done 2026-07-18:*
+   `MemoryIndex.Add`/`AddBatch` insert into the graph after activation via `syncHNSW`;
+   `Delete` removes the chunk from `m.chunks`/BM25 so searches, `Count`, and `GetChunk`
+   never see it (tombstone rebuild retained); new `HNSW.Contains`; `SQLiteStore` mirror kept
+   in sync on upload and pruned on `DeleteChunk`/`DeleteDocument`. Regression tests:
+   `index/memory_hnsw_test.go`, `store/sqlite_hnsw_test.go`, `TestHNSW_Contains`.
 2. **SQLiteStore locking** (bug 4) — wrap `s.chunks`/`s.hnsw` mutations and reads in `s.mu`;
    add concurrent Upload/Search test.
 3. **Real HNSW construction** (bug 3) — ef-construction neighbor search in `Add`; add recall

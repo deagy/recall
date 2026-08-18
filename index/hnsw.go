@@ -63,9 +63,7 @@ func (m *MemoryIndex) Add(_ context.Context, chunk *core.Chunk) error {
 	m.chunks[chunk.ID] = chunk
 	m.bm25.AddDocument(chunk.ID, chunk.Content)
 
-	if !m.hnswEnabled && len(m.chunks) > HNSWThreshold {
-		m.buildHNSW()
-	}
+	m.syncHNSW(chunk)
 	return nil
 }
 
@@ -82,12 +80,26 @@ func (m *MemoryIndex) AddBatch(_ context.Context, chunks []*core.Chunk) error {
 		}
 		m.chunks[chunk.ID] = chunk
 		m.bm25.AddDocument(chunk.ID, chunk.Content)
+		m.syncHNSW(chunk)
 	}
 
-	if !m.hnswEnabled && len(m.chunks) > HNSWThreshold {
-		m.buildHNSW()
-	}
 	return nil
+}
+
+// syncHNSW keeps the HNSW graph in sync with newly added chunks: it builds the
+// graph once the threshold is crossed and inserts chunks individually
+// afterwards, so chunks added after activation remain searchable.
+// Callers must hold m.mu.
+func (m *MemoryIndex) syncHNSW(chunk *core.Chunk) {
+	if !m.hnswEnabled {
+		if len(m.chunks) > HNSWThreshold {
+			m.buildHNSW()
+		}
+		return
+	}
+	if !m.hnsw.Contains(chunk.ID) {
+		m.hnsw.Add(chunk.ID, chunk.Embedding)
+	}
 }
 
 // buildHNSW constructs the HNSW graph from current chunks.
@@ -112,8 +124,11 @@ func (m *MemoryIndex) Delete(_ context.Context, id string) error {
 			m.deleted = make(map[string]bool)
 		}
 		m.deleted[id] = true
-		tombstoneRatio := float64(len(m.deleted)) / float64(len(m.chunks))
-		if tombstoneRatio > m.tombstoneThreshold {
+		// Drop the chunk so it is invisible to searches, Count, and GetChunk
+		// until the graph is rebuilt.
+		delete(m.chunks, id)
+		m.bm25.RemoveDocument(id)
+		if float64(len(m.deleted)) > m.tombstoneThreshold*float64(len(m.chunks)) {
 			m.rebuildHNSW()
 		}
 	} else {
@@ -438,6 +453,14 @@ func (h *HNSW) Add(id string, embedding []float32) {
 	node.connections = node.connections[:node.layer+1]
 	h.nodes = append(h.nodes, node)
 	h.nodeIdx[id] = idx
+}
+
+// Contains reports whether a node with the given ID is present in the graph.
+func (h *HNSW) Contains(id string) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	_, ok := h.nodeIdx[id]
+	return ok
 }
 
 // Search finds the nearest neighbors to the query embedding.

@@ -167,9 +167,17 @@ func (s *SQLiteStore) Upload(ctx context.Context, doc *core.Document, content st
 		s.chunks[chunk.ID] = chunk
 	}
 
-	// Build HNSW if threshold reached
-	if len(s.chunks) > index.HNSWThreshold && s.hnsw == nil {
-		s.buildHNSW()
+	// Build HNSW if threshold reached, or keep the existing mirror in sync.
+	if s.hnsw == nil {
+		if len(s.chunks) > index.HNSWThreshold {
+			s.buildHNSW()
+		}
+	} else {
+		for _, chunk := range chunks {
+			if !s.hnsw.Contains(chunk.ID) {
+				s.hnsw.Add(chunk.ID, chunk.Embedding)
+			}
+		}
 	}
 
 	doc.ChunkCount = len(chunks)
@@ -487,6 +495,9 @@ func (s *SQLiteStore) DeleteChunk(id string) error {
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("committing: %w", err)
 	}
+
+	// Prune the in-memory mirror so deleted chunks are not served by HNSW search.
+	delete(s.chunks, id)
 	return nil
 }
 
@@ -509,6 +520,13 @@ func (s *SQLiteStore) DeleteDocument(docID string) error {
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("committing: %w", err)
+	}
+
+	// Prune the in-memory mirror so deleted chunks are not served by HNSW search.
+	for chunkID, chunk := range s.chunks {
+		if chunk.DocumentRef == docID {
+			delete(s.chunks, chunkID)
+		}
 	}
 	return nil
 }

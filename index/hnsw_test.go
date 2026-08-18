@@ -182,13 +182,29 @@ func TestMemoryIndex_DeleteRebuildsHNSW(t *testing.T) {
 
 	require.NoError(t, m.Delete(context.Background(), "chunk-A-0"))
 
-	// After delete with tombstone, chunk is still in map but marked deleted
-	// Rebuild hasn't happened yet (threshold is 20%)
-	expected := HNSWThreshold + 10
-	require.Equal(t, expected, m.Count(), "expected %d chunks (tombstoned, not removed)", expected)
+	// After delete the chunk is removed from the index (tombstone is tracked
+	// internally until the graph is rebuilt).
+	expected := HNSWThreshold + 9
+	require.Equal(t, expected, m.Count(), "deleted chunk should not be counted")
 
-	// Search should still work after delete (tombstoned entry excluded from HNSW results)
+	_, ok := m.GetChunk("chunk-A-0")
+	require.False(t, ok, "deleted chunk should not be retrievable")
+
+	// Search should still work after delete and never return the deleted chunk.
 	results, err := m.Search(context.Background(), make([]float32, 32), DefaultSearchOptions(5))
 	require.NoError(t, err)
 	require.NotEmpty(t, results, "expected results after delete")
+	for _, r := range results {
+		require.NotEqual(t, "chunk-A-0", r.Chunk.ID, "deleted chunk must not be returned")
+	}
+}
+
+func TestHNSW_Contains(t *testing.T) {
+	h := NewHNSW(4, DefaultHNSWConfig())
+
+	require.False(t, h.Contains("x"), "empty graph should contain nothing")
+
+	h.Add("x", []float32{1, 0, 0, 0})
+	require.True(t, h.Contains("x"), "added node should be found")
+	require.False(t, h.Contains("y"), "unknown node should not be found")
 }
