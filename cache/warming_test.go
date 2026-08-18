@@ -11,13 +11,13 @@ func TestCacheWarmer_AddAndWarm(t *testing.T) {
 
 	// Add warm requests
 	warmer.AddRequest(WarmRequest{
-		Query: "popular query 1",
+		Query:  "popular query 1",
 		Result: []string{"result1", "result2"},
 		TTL:    5 * time.Minute,
 	})
 
 	warmer.AddRequest(WarmRequest{
-		Query: "popular query 2",
+		Query:  "popular query 2",
 		Result: []string{"result3", "result4"},
 		TTL:    5 * time.Minute,
 	})

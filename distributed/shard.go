@@ -11,11 +11,11 @@ import (
 
 // Shard represents a shard in the distributed storage.
 type Shard struct {
-	ID      string
-	NodeID  string
-	Status  string // "active", "inactive", "degraded"
-	Data    map[string]*core.Chunk
-	mu      sync.RWMutex
+	ID     string
+	NodeID string
+	Status string // "active", "inactive", "degraded"
+	Data   map[string]*core.Chunk
+	mu     sync.RWMutex
 }
 
 // NewShard creates a new shard.
@@ -252,7 +252,7 @@ func (sm *ShardManager) getShardIDForChunk(chunkID string) string {
 // Search searches across all active shards.
 func (sm *ShardManager) Search(ctx context.Context, query []float32, opts index.SearchOptions) ([]index.SearchResult, error) {
 	activeShards := sm.GetActiveShards()
-	
+
 	var allResults []index.SearchResult
 	var lastErr error
 
@@ -275,7 +275,7 @@ func (sm *ShardManager) Search(ctx context.Context, query []float32, opts index.
 // SearchHybrid performs hybrid search combining vector similarity and BM25 keyword scores.
 func (sm *ShardManager) SearchHybrid(ctx context.Context, query []float32, opts index.SearchOptions) ([]index.SearchResult, error) {
 	activeShards := sm.GetActiveShards()
-	
+
 	var allResults []index.SearchResult
 	var lastErr error
 

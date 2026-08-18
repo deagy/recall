@@ -11,7 +11,7 @@ func TestGraphCache_SetAndGet(t *testing.T) {
 	gc := NewGraphCache(100)
 
 	result := &GraphTraversalResult{
-		Query:   "find friends of alice",
+		Query: "find friends of alice",
 		Results: []*graph.Entity{
 			graph.NewEntity("bob", "Bob", graph.EntityPerson),
 			graph.NewEntity("charlie", "Charlie", graph.EntityPerson),

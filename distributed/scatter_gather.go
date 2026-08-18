@@ -41,7 +41,7 @@ func ScatterGatherSearch(ctx context.Context, sm *ShardManager, query []float32,
 	}
 
 	activeShards := sm.GetActiveShards()
-	
+
 	if config.FanOut > 0 && len(activeShards) > config.FanOut {
 		activeShards = activeShards[:config.FanOut]
 	}
@@ -116,7 +116,7 @@ func ScatterGatherSearchHybrid(ctx context.Context, sm *ShardManager, query []fl
 	}
 
 	activeShards := sm.GetActiveShards()
-	
+
 	if config.FanOut > 0 && len(activeShards) > config.FanOut {
 		activeShards = activeShards[:config.FanOut]
 	}

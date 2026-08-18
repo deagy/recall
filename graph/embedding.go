@@ -7,9 +7,9 @@ import (
 
 // Triple represents a fact in the knowledge graph: (head, relation, tail).
 type Triple struct {
-	Head   string
+	Head     string
 	Relation string
-	Tail   string
+	Tail     string
 }
 
 // TrainOptions configures the training process for graph embeddings.

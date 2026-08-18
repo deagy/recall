@@ -34,9 +34,9 @@ type CacheStats struct {
 
 // CacheEntry represents a single entry in the cache.
 type CacheEntry struct {
-	Value     interface{}
-	ExpiresAt time.Time
-	CreatedAt time.Time
+	Value        interface{}
+	ExpiresAt    time.Time
+	CreatedAt    time.Time
 	LastAccessed time.Time
 }
 
@@ -51,8 +51,8 @@ func (e *CacheEntry) IsExpired() bool {
 // DefaultCacheConfig returns default configuration for caches.
 func DefaultCacheConfig() CacheConfig {
 	return CacheConfig{
-		MaxSize:    10000,
-		DefaultTTL: 5 * time.Minute,
+		MaxSize:        10000,
+		DefaultTTL:     5 * time.Minute,
 		EvictionPolicy: EvictionLRU,
 	}
 }

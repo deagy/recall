@@ -91,7 +91,7 @@ func TestQueryCache_Stats(t *testing.T) {
 func TestGenerateQueryKey(t *testing.T) {
 	// Test with same query and filters (should produce same key)
 	filters := map[string]interface{}{
-		"limit": 10,
+		"limit":  10,
 		"offset": 0,
 	}
 
@@ -110,7 +110,7 @@ func TestGenerateQueryKey(t *testing.T) {
 
 	// Test with different filters (should produce different key)
 	filters2 := map[string]interface{}{
-		"limit": 20,
+		"limit":  20,
 		"offset": 0,
 	}
 	key4 := GenerateQueryKey("test query", filters2)

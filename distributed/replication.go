@@ -33,10 +33,10 @@ type ReplicationResult struct {
 
 // ReplicationManager manages data replication across the cluster.
 type ReplicationManager struct {
-	mu               sync.RWMutex
-	cluster          *Cluster
-	shardManager     *ShardManager
-	strategy         ReplicationStrategy
+	mu                sync.RWMutex
+	cluster           *Cluster
+	shardManager      *ShardManager
+	strategy          ReplicationStrategy
 	replicationFactor int
 }
 

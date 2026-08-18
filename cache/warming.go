@@ -16,10 +16,10 @@ type WarmRequest struct {
 
 // CacheWarmer provides cache warming strategies to pre-populate the cache.
 type CacheWarmer struct {
-	mu         sync.Mutex
-	cache      Cache
-	requests   []WarmRequest
-	stats      WarmStats
+	mu       sync.Mutex
+	cache    Cache
+	requests []WarmRequest
+	stats    WarmStats
 }
 
 // WarmStats tracks cache warming statistics.
@@ -32,8 +32,8 @@ type WarmStats struct {
 // NewCacheWarmer creates a new CacheWarmer.
 func NewCacheWarmer(cache Cache) *CacheWarmer {
 	return &CacheWarmer{
-		cache:     cache,
-		requests:  make([]WarmRequest, 0),
+		cache:    cache,
+		requests: make([]WarmRequest, 0),
 		stats: WarmStats{
 			StartTime: time.Now(),
 		},

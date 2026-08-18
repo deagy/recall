@@ -10,10 +10,12 @@ import (
 // TransE implements the TransE algorithm for learning graph embeddings.
 // TransE represents entities and relations as vectors in a low-dimensional space,
 // where the relation vector is approximately the translation from head to tail:
-//   head + relation ≈ tail
+//
+//	head + relation ≈ tail
 //
 // The loss function is margin-based:
-//   L = sum over positive triples of max(0, margin - score(pos) + score(neg))
+//
+//	L = sum over positive triples of max(0, margin - score(pos) + score(neg))
 type TransE struct {
 	store *EmbeddingStore
 	opts  TrainOptions

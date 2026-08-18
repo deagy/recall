@@ -75,14 +75,14 @@ func (m *ChunkMetrics) Summary() ChunkSummary {
 
 	if m.TotalChunks == 0 {
 		return ChunkSummary{
-			TotalChunks:   0,
-			TotalTokens:   0,
-			AvgChunkSize:  0,
-			MinChunkSize:  0,
-			MaxChunkSize:  0,
-			AvgCoherence:  0,
+			TotalChunks:    0,
+			TotalTokens:    0,
+			AvgChunkSize:   0,
+			MinChunkSize:   0,
+			MaxChunkSize:   0,
+			AvgCoherence:   0,
 			ProcessingTime: 0,
-			Errors:        0,
+			Errors:         0,
 		}
 	}
 

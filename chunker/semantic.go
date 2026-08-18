@@ -42,10 +42,10 @@ type SemanticConfig struct {
 // DefaultSemanticConfig returns a SemanticConfig with sensible defaults.
 func DefaultSemanticConfig() SemanticConfig {
 	return SemanticConfig{
-		Threshold:     0.7,
-		MinChunkSize:  100,
-		MaxChunkSize:  2000,
-		OverlapSize:   1,
+		Threshold:    0.7,
+		MinChunkSize: 100,
+		MaxChunkSize: 2000,
+		OverlapSize:  1,
 	}
 }
 
