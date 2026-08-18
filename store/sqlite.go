@@ -97,6 +97,25 @@ CREATE TABLE IF NOT EXISTS embeddings (
     embedding BLOB NOT NULL,
     FOREIGN KEY (chunk_id) REFERENCES chunks(id) ON DELETE CASCADE
 );
+
+CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
+    content,
+    content='chunks',
+    content_rowid='rowid'
+);
+
+CREATE TRIGGER IF NOT EXISTS chunks_ai AFTER INSERT ON chunks BEGIN
+    INSERT INTO chunks_fts(rowid, content) VALUES (new.rowid, new.content);
+END;
+
+CREATE TRIGGER IF NOT EXISTS chunks_ad AFTER DELETE ON chunks BEGIN
+    INSERT INTO chunks_fts(chunks_fts, rowid, content) VALUES ('delete', old.rowid, old.content);
+END;
+
+CREATE TRIGGER IF NOT EXISTS chunks_au AFTER UPDATE ON chunks BEGIN
+    INSERT INTO chunks_fts(chunks_fts, rowid, content) VALUES ('delete', old.rowid, old.content);
+    INSERT INTO chunks_fts(rowid, content) VALUES (new.rowid, new.content);
+END;
 `
 	_, err := s.db.Exec(schema)
 	return err
@@ -348,6 +367,10 @@ func (s *SQLiteStore) SearchHybrid(ctx context.Context, query string, opts index
 func (s *SQLiteStore) searchFTS5(query string, opts index.SearchOptions) map[string]float64 {
 	// Escape single quotes for FTS5 query
 	escaped := strings.ReplaceAll(query, "'", "''")
+	limit := opts.TopK
+	if limit <= 0 {
+		limit = 10
+	}
 	sql := `
 		SELECT c.id, rank
 		FROM chunks c
@@ -357,9 +380,11 @@ func (s *SQLiteStore) searchFTS5(query string, opts index.SearchOptions) map[str
 		LIMIT ?
 	`
 
-	rows, err := s.db.Query(sql, escaped, opts.TopK)
+	rows, err := s.db.Query(sql, escaped, limit)
 	if err != nil {
-		// FTS5 not available, return empty
+		// FTS5 unavailable (e.g. a database created before the FTS
+		// schema existed): degrade to vector-only scoring instead of
+		// failing the whole hybrid search.
 		return make(map[string]float64)
 	}
 	defer rows.Close()
@@ -371,15 +396,18 @@ func (s *SQLiteStore) searchFTS5(query string, opts index.SearchOptions) map[str
 		if err := rows.Scan(&id, &rank); err != nil {
 			continue
 		}
-		// Convert rank (lower is better) to score (higher is better)
-		scores[id] = 1.0 / (1.0 + rank)
+		// FTS5 rank is a bm25 score where lower (more negative) is better;
+		// flip the sign so that higher means better, matching vector scores.
+		scores[id] = -rank
 	}
 	return scores
 }
 
-// fuseFTS5Results fuses vector and FTS5 scores into final results.
+// fuseFTS5Results fuses vector and FTS5 scores into final results. Chunks
+// matched only by the FTS5 query (keyword-only hits) are included as well.
+// Callers must hold s.mu (at least for read).
 func (s *SQLiteStore) fuseFTS5Results(ctx context.Context, query []float32, ftsResults map[string]float64, opts index.SearchOptions) ([]index.SearchResult, error) {
-	// Get all chunks with embeddings
+	// Load all chunks with embeddings.
 	rows, err := s.db.Query(`
 		SELECT c.id, c.content, c.document_ref, c.chunk_index, c.metadata, e.embedding
 		FROM chunks c
@@ -390,13 +418,16 @@ func (s *SQLiteStore) fuseFTS5Results(ctx context.Context, query []float32, ftsR
 	}
 	defer rows.Close()
 
-	type fusedResult struct {
-		chunk *core.Chunk
-		score float64
-	}
-	var results []fusedResult
+	chunks := make(map[string]*core.Chunk)
+	vecScoreMap := make(map[string]float64)
 
 	for rows.Next() {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+
 		var chunkID, content, docRef string
 		var chunkIdx int
 		var metaJSON, embBytes []byte
@@ -404,57 +435,52 @@ func (s *SQLiteStore) fuseFTS5Results(ctx context.Context, query []float32, ftsR
 			continue
 		}
 
-		// Vector score
 		embedding := unpackEmbedding(embBytes)
-		vecScore := cosineSimilarity(query, embedding)
+		chunks[chunkID] = &core.Chunk{
+			ID:          chunkID,
+			Content:     content,
+			DocumentRef: docRef,
+			ChunkIndex:  chunkIdx,
+			Metadata:    deserializeMetadata(string(metaJSON)),
+			Embedding:   embedding,
+		}
+		vecScoreMap[chunkID] = cosineSimilarity(query, embedding)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating chunks: %w", err)
+	}
 
-		// BM25/FTS5 score
-		bm25Score := ftsResults[chunkID]
+	// A custom fusion is computed once over the full score maps, so RRF and
+	// friends see real ranks instead of a singleton vector map per chunk.
+	var fusedMap map[string]float64
+	if opts.Fusion != nil {
+		fusedMap = opts.Fusion.Fuse(vecScoreMap, ftsResults)
+	}
 
-		// Fuse scores
+	var results []index.SearchResult
+	for chunkID, chunk := range chunks {
 		var fusedScore float64
 		if opts.Fusion != nil {
-			fusionInput := []map[string]float64{
-				{chunkID: vecScore},
-				ftsResults,
-			}
-			fusedMap := opts.Fusion.Fuse(fusionInput...)
 			fusedScore = fusedMap[chunkID]
 		} else {
-			alpha := opts.BM25Weight
-			if alpha == 0 {
-				fusedScore = vecScore
-			} else {
-				fusedScore = alpha*vecScore + (1-alpha)*bm25Score
-			}
+			// Weighted sum per SearchOptions.BM25Weight: 0 = pure vector,
+			// 1 = pure BM25.
+			fusedScore = (1-opts.BM25Weight)*vecScoreMap[chunkID] + opts.BM25Weight*ftsResults[chunkID]
 		}
-
-		if fusedScore > 0 {
-			chunk := &core.Chunk{
-				ID:          chunkID,
-				Content:     content,
-				DocumentRef: docRef,
-				ChunkIndex:  chunkIdx,
-				Metadata:    deserializeMetadata(string(metaJSON)),
-				Embedding:   embedding,
-			}
-			if !matchesFilters(fusedScore, chunk, opts.Filters) {
-				continue
-			}
-			results = append(results, fusedResult{chunk: chunk, score: fusedScore})
+		if fusedScore <= 0 {
+			continue
 		}
+		if !matchesFilters(fusedScore, chunk, opts.Filters) {
+			continue
+		}
+		results = append(results, index.SearchResult{Chunk: chunk, Score: fusedScore})
 	}
 
-	// Convert to index.SearchResult for sorting
-	searchResults := make([]index.SearchResult, len(results))
-	for i, r := range results {
-		searchResults[i] = index.SearchResult{Chunk: r.chunk, Score: r.score}
+	sortResultsByScore(results)
+	if opts.TopK > 0 && len(results) > opts.TopK {
+		results = results[:opts.TopK]
 	}
-	sortResultsByScore(searchResults)
-	if opts.TopK > 0 && len(searchResults) > opts.TopK {
-		searchResults = searchResults[:opts.TopK]
-	}
-	return searchResults, nil
+	return results, nil
 }
 
 // GetChunk returns a chunk by its ID.
@@ -682,63 +708,6 @@ func matchesFilters(score float64, chunk *core.Chunk, filters []index.Filter) bo
 		}
 	}
 	return true
-}
-
-// fuseScores fuses vector and BM25 scores into final results.
-func fuseScores(vecScoreMap, bm25Scores map[string]float64, vecResults []index.SearchResult, opts index.SearchOptions) ([]index.SearchResult, error) {
-	// Collect all unique IDs
-	allIDs := make(map[string]bool)
-	for id := range vecScoreMap {
-		allIDs[id] = true
-	}
-	for id := range bm25Scores {
-		allIDs[id] = true
-	}
-
-	type fusedResult struct {
-		chunk *core.Chunk
-		score float64
-	}
-	var results []fusedResult
-
-	for id := range allIDs {
-		vecScore := vecScoreMap[id]
-		bm25Score := bm25Scores[id]
-
-		var fusedScore float64
-		if opts.Fusion != nil {
-			fusionInput := []map[string]float64{vecScoreMap, bm25Scores}
-			fusedMap := opts.Fusion.Fuse(fusionInput...)
-			fusedScore = fusedMap[id]
-		} else {
-			alpha := opts.BM25Weight
-			if alpha == 0 {
-				fusedScore = vecScore
-			} else {
-				fusedScore = alpha*vecScore + (1-alpha)*bm25Score
-			}
-		}
-
-		if fusedScore > 0 {
-			var chunk *core.Chunk
-			for _, r := range vecResults {
-				if r.Chunk.ID == id {
-					chunk = r.Chunk
-					break
-				}
-			}
-			if chunk == nil {
-				continue
-			}
-			results = append(results, fusedResult{chunk: chunk, score: fusedScore})
-		}
-	}
-
-	searchResults := make([]index.SearchResult, len(results))
-	for i, r := range results {
-		searchResults[i] = index.SearchResult{Chunk: r.chunk, Score: r.score}
-	}
-	return searchResults, nil
 }
 
 // sortResultsByScore sorts search results by score descending.

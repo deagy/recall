@@ -85,12 +85,18 @@ The index-internal one is never used by any search path (dead memory per chunk);
 store-level one is never `RemoveDocument`-ed on `DeleteChunk`/`DeleteDocument`.
 **Fix:** keep a single BM25 index per namespace; call `RemoveDocument` on all delete paths.
 
-### 7. Hybrid search can never return keyword-only matches
+### ~~7. Hybrid search can never return keyword-only matches~~ — *Fixed 2026-08-17 (see action plan #5):*
 `store/memory.go:232-261` (`fuseMap`)
 Fusion only iterates the vector TopK and explicitly skips IDs present only in BM25
 ("Chunk only in BM25 results, skip"). A strong keyword match with weak vector similarity is
 silently dropped — hybrid degrades to vector search with BM25 re-ranking.
 **Fix:** look up BM25-only chunks from the index and include them in fusion.
+Also fixed in the same change: `SQLiteStore.SearchHybrid` was never hybrid at all — the
+`chunks_fts` FTS5 table was never created or populated, so `searchFTS5` always failed
+silently and hybrid degraded to pure vector; `fuseFTS5Results` also applied the
+`BM25Weight` inverts (weight was the *vector* weight, contradicting
+`SearchOptions` docs) and fed RRF a singleton per-chunk vector map, making its vector
+contribution a constant. A dead, identically-buggy `fuseScores` helper was removed.
 
 ---
 
@@ -186,7 +192,22 @@ silently dropped — hybrid degrades to vector search with BM25 re-ranking.
    wrap-around (primary == `GetNodeForChunk`), RF capping at 1 node and nil on an
    empty cluster, Rebalance idempotency + self-healing + cancellation, and key
    distribution sanity. All fail against the legacy unsorted append-only ring.
-5. **Hybrid fusion** (bug 7) — include BM25-only results via index lookup instead of skipping.
+5. ✅ **Hybrid fusion** (bug 7) — *Done 2026-08-17:* `fuseMap` now takes a lookup
+   callback and resolves BM25-only IDs from the index (deleted chunks stay excluded);
+   custom fusion runs once over the full score maps instead of per-ID.
+   `SQLiteStore` got a real FTS5 pipeline: `chunks_fts` (external content table,
+   `content_rowid`) + insert/delete/update triggers keep it in sync with `chunks`;
+   `fuseFTS5Results` honors the documented `BM25Weight` semantics (0 = pure vector,
+   1 = pure BM25, previously inverted) and fuses once over full maps so RRF sees real
+   ranks; FTS5 `rank` (negative bm25, lower is better) is sign-flipped to higher-is-
+   better; `LIMIT 0` when `TopK` unset is defaulted to 10; the dead buggy `fuseScores`
+   helper was removed. Regression tests: `store/hybrid_fusion_test.go` — fuseMap unit
+   tests (BM25-only inclusion, deleted-chunk exclusion, pure-vector boundary, RRF math)
+   plus end-to-end tests for both stores (pure-BM25 ranks keyword match first,
+   BM25-only chunks returned, RRF includes FTS-only match, SQLite pure-vector parity,
+   deleted chunk not resurrected via the keyword side). Stash-verified: both
+   end-to-end tests fail against the pre-fix code (memory dropped the keyword-only
+   chunk; SQLite "pure BM25" returned a distractor because no FTS table existed).
 6. **Housekeeping** — `gofmt -s -w .`, fix CI bench step, move mocks to test files,
    de-duplicate BM25 + prune on delete, raise `store`/`llm`/`distributed` coverage,
    decide multi-namespace (implement or correct README).

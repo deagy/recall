@@ -184,7 +184,16 @@ func (s *MemoryStore) SearchHybrid(ctx context.Context, query string, opts index
 	s.mu.RUnlock()
 
 	// Fuse scores
-	fused := fuseMap(vecResults, bm25ResultsMap, opts)
+	fused := fuseMap(vecResults, bm25ResultsMap, func(id string) *core.Chunk {
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		for _, idx := range s.indexes {
+			if chunk, ok := idx.GetChunk(id); ok {
+				return chunk
+			}
+		}
+		return nil
+	}, opts)
 
 	// Sort and limit
 	sort.Slice(fused, func(i, j int) bool {
@@ -197,24 +206,20 @@ func (s *MemoryStore) SearchHybrid(ctx context.Context, query string, opts index
 	return fused, nil
 }
 
-// fuseMap combines vector search results with BM25 scores using the configured fusion method.
-func fuseMap(vecResults []index.SearchResult, bm25Scores map[string]float64, opts index.SearchOptions) []index.SearchResult {
-	// Build a map of chunkID -> vector score
-	vecScoreMap := make(map[string]float64)
+// fuseMap combines vector search results with BM25 scores using the
+// configured fusion method. Chunks that match only the keyword (BM25) side
+// are resolved through lookup, so strong keyword hits with weak vector
+// similarity are not silently dropped; lookup must return nil for chunks
+// that are no longer in the index (e.g. deleted).
+func fuseMap(vecResults []index.SearchResult, bm25Scores map[string]float64, lookup func(id string) *core.Chunk, opts index.SearchOptions) []index.SearchResult {
+	vecScoreMap := make(map[string]float64, len(vecResults))
+	chunkByID := make(map[string]*core.Chunk, len(vecResults))
 	for _, r := range vecResults {
 		vecScoreMap[r.Chunk.ID] = r.Score
+		chunkByID[r.Chunk.ID] = r.Chunk
 	}
 
-	// Determine fusion method
-	var alpha float64
-	if opts.BM25Weight > 0 {
-		alpha = 1.0 - opts.BM25Weight // alpha is weight for vector (1-BM25Weight)
-	} else {
-		alpha = 1.0 // Default: pure vector
-	}
-
-	// Collect all chunk IDs
-	allIDs := make(map[string]bool)
+	allIDs := make(map[string]bool, len(vecScoreMap)+len(bm25Scores))
 	for id := range vecScoreMap {
 		allIDs[id] = true
 	}
@@ -222,51 +227,38 @@ func fuseMap(vecResults []index.SearchResult, bm25Scores map[string]float64, opt
 		allIDs[id] = true
 	}
 
-	// Fuse scores
-	type fusedResult struct {
-		chunk *core.Chunk
-		score float64
+	// A custom fusion is computed once for the full score maps.
+	var fusedMap map[string]float64
+	if opts.Fusion != nil {
+		fusedMap = opts.Fusion.Fuse(vecScoreMap, bm25Scores)
 	}
-	var results []fusedResult
 
+	var results []index.SearchResult
 	for id := range allIDs {
-		vecScore := vecScoreMap[id]
-		bm25Score := bm25Scores[id]
-
 		var fusedScore float64
 		if opts.Fusion != nil {
-			// Use custom fusion
-			fusionInput := []map[string]float64{vecScoreMap, bm25Scores}
-			fusedMap := opts.Fusion.Fuse(fusionInput...)
 			fusedScore = fusedMap[id]
 		} else {
-			// Weighted sum: alpha * vecScore + (1-alpha) * bm25Score
-			fusedScore = alpha*vecScore + (1-alpha)*bm25Score
+			// Weighted sum per SearchOptions.BM25Weight: 0 = pure vector,
+			// 1 = pure BM25.
+			fusedScore = (1-opts.BM25Weight)*vecScoreMap[id] + opts.BM25Weight*bm25Scores[id]
+		}
+		if fusedScore <= 0 {
+			continue
 		}
 
-		if fusedScore > 0 {
-			// Find the chunk
-			var chunk *core.Chunk
-			for _, r := range vecResults {
-				if r.Chunk.ID == id {
-					chunk = r.Chunk
-					break
-				}
-			}
-			if chunk == nil {
-				// Chunk only in BM25 results, skip (we don't have the full chunk)
-				continue
-			}
-			results = append(results, fusedResult{chunk: chunk, score: fusedScore})
+		chunk := chunkByID[id]
+		if chunk == nil {
+			// Keyword-only match: resolve the full chunk from the index.
+			chunk = lookup(id)
 		}
+		if chunk == nil {
+			// No longer present in the index (e.g. deleted): skip.
+			continue
+		}
+		results = append(results, index.SearchResult{Chunk: chunk, Score: fusedScore})
 	}
-
-	// Convert to SearchResult
-	searchResults := make([]index.SearchResult, len(results))
-	for i, r := range results {
-		searchResults[i] = index.SearchResult{Chunk: r.chunk, Score: r.score}
-	}
-	return searchResults
+	return results
 }
 
 // GetChunk returns a chunk by its ID.
