@@ -11,7 +11,7 @@ _Reviewed: 2026-07-18 · Scope: full codebase (~25.7k LOC, 18 packages)_
 | `go test ./... -count=1` | ✅ all pass (706 test funcs, ~13.7k test LOC) |
 | `gofmt -l .` | ✅ clean (sweep committed 2026-08-17, 12 files) |
 | Coverage ≥80% target | ❌ 6 packages below (see table) |
-| CI (`.github/workflows/go.yml`) | ⚠️ **Bench step fails** — `go test -bench=.` with no package spec errors: `no Go files in ...` |
+| CI (`.github/workflows/go.yml`) | ✅ fixed 2026-08-17 — vet, gofmt gate, `-race` tests, smoke bench |
 
 **Coverage vs. the >80% target:**
 
@@ -137,8 +137,11 @@ contribution a constant. A dead, identically-buggy `fuseScores` helper was remov
 
 ## 🟡 Minor / process
 
-- **CI**: fix `go test -bench=.` → `go test ./... -bench=. -run=^$` (or drop the step); add
-  `go vet ./...`, a `gofmt -l` check, and `go test -race ./...` steps; consider `-count=1`.
+- **CI**: ~~fix `go test -bench=.` → `go test ./... -bench=. -run=^$` (or drop the step); add
+  `go vet ./...`, a `gofmt -l` check, and `go test -race ./...` steps; consider `-count=1`.~~
+  — *Fixed 2026-08-17:* `.github/workflows/go.yml` now runs `go vet`, a `gofmt -s -l`
+  gate, `go test ./... -count=1 -race`, and a smoke bench
+  (`-run=^$ -bench=. -benchtime=1x`).
 - **~~13 unformatted files~~ — *Fixed 2026-08-17:*** `cache/` (5), `chunker/` (2), `distributed/` (4), `graph/` (2) —
   `gofmt -s -w .` fixed all (12 at sweep time; `distributed/cluster.go` had already been
   reformatted by the fix-4 ring rewrite).
@@ -220,6 +223,7 @@ contribution a constant. A dead, identically-buggy `fuseScores` helper was remov
    2026-08-17 (bug 6 — index-internal BM25 is the single keyword source; store-level
    `s.bm25s` removed; `DeleteChunk`/`DeleteDocument` prune via `MemoryIndex.Delete`;
    regression tests in `index/memory_test.go` + `store/hybrid_fusion_test.go`)*;
-   remaining: fix CI bench step, move mocks to test files, raise `store`/`llm`/
+   ~~fix CI bench step~~ ✅ *Done 2026-08-17* (vet + gofmt gate + `-race` + smoke bench);
+   remaining: move mocks to test files, raise `store`/`llm`/
    `distributed` coverage, decide multi-namespace (implement or correct README).
 
