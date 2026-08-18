@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -86,29 +85,4 @@ func TestRRFFusion_Empty(t *testing.T) {
 func TestRRFFusion_DefaultK(t *testing.T) {
 	f := NewRRFFusion(0) // Should default to 60
 	assert.Equal(t, 60, f.K, "expected default K=60")
-}
-
-// --- Mockery-generated Fusion mock tests ---
-
-func TestMockFusion_Fuse(t *testing.T) {
-	m := new(MockFusion)
-	expected := map[string]float64{"a": 1.0, "b": 2.0}
-	m.On("Fuse", mock.Anything, mock.Anything).Return(expected)
-
-	s1 := map[string]float64{"a": 10}
-	s2 := map[string]float64{"b": 20}
-	result := m.Fuse(s1, s2)
-
-	assert.Equal(t, expected, result)
-	m.AssertExpectations(t)
-}
-
-func TestMockFusion_Fuse_Empty(t *testing.T) {
-	m := new(MockFusion)
-	expected := map[string]float64{}
-	m.On("Fuse").Return(expected)
-
-	result := m.Fuse()
-	assert.Empty(t, result)
-	m.AssertExpectations(t)
 }

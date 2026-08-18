@@ -120,7 +120,10 @@ func (c *OpenAIClient) ChatStream(ctx context.Context, req *ChatRequest, fn func
 			return err
 		}
 
-		if openaiChunk.Choices[0].FinishReason != "" {
+		// OpenAI may send keep-alive or usage-only chunks with an empty
+		// choices array; guard against indexing into it.
+		finished := len(openaiChunk.Choices) > 0 && openaiChunk.Choices[0].FinishReason != ""
+		if finished {
 			break
 		}
 	}
@@ -174,14 +177,19 @@ func (c *OpenAIClient) convertResponse(resp *OpenAIChatResponse) *ChatResponse {
 }
 
 // convertStreamChunk converts an OpenAI stream chunk to StreamChunk.
+// Chunks with no choices (e.g. usage-only keep-alives) yield an empty delta.
 func (c *OpenAIClient) convertStreamChunk(chunk *OpenAIStreamChunk) *StreamChunk {
-	choice := chunk.Choices[0]
+	result := &StreamChunk{}
 
-	result := &StreamChunk{
-		Delta: Message{
+	if len(chunk.Choices) > 0 {
+		choice := chunk.Choices[0]
+		result.Delta = Message{
 			Role:    choice.Delta.Role,
 			Content: choice.Delta.Content,
-		},
+		}
+		if choice.FinishReason != "" {
+			result.FinishReason = choice.FinishReason
+		}
 	}
 
 	if chunk.Usage != nil {
@@ -190,10 +198,6 @@ func (c *OpenAIClient) convertStreamChunk(chunk *OpenAIStreamChunk) *StreamChunk
 			CompletionTokens: chunk.Usage.CompletionTokens,
 			TotalTokens:      chunk.Usage.TotalTokens,
 		}
-	}
-
-	if choice.FinishReason != "" {
-		result.FinishReason = choice.FinishReason
 	}
 
 	return result

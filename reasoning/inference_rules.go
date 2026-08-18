@@ -170,15 +170,32 @@ func (r *HierarchyRule) InferTransitiveClosure(g *graph.KnowledgeGraph) []*graph
 			continue
 		}
 
-		// Find all ancestors
-		ancestors := g.TransitiveClosure(rel.From)
-		for _, ancestor := range ancestors {
-			if ancestor.ID != rel.To {
-				// Check if relation already exists
-				if _, ok := g.GetRelation(rel.From, ancestor.ID, rel.Type); !ok {
-					inferredRel := graph.NewRelation(rel.From, ancestor.ID, rel.Type, rel.Weight*0.8)
-					inferred = append(inferred, inferredRel)
+		// Walk only outgoing hierarchy edges: for "dog is_a mammal", the
+		// ancestors of dog are reached by following is_a edges away from
+		// it. KnowledgeGraph.TransitiveClosure is bidirectional and would
+		// treat children as ancestors too.
+		ancestors := map[string]bool{}
+		queue := []string{rel.From}
+		for len(queue) > 0 {
+			curr := queue[0]
+			queue = queue[1:]
+			for _, out := range g.OutgoingRelations(curr) {
+				if !r.isHierarchyType(out.Type) || ancestors[out.To] || out.To == rel.From {
+					continue
 				}
+				ancestors[out.To] = true
+				queue = append(queue, out.To)
+			}
+		}
+
+		for id := range ancestors {
+			if id == rel.To {
+				continue
+			}
+			// Check if relation already exists
+			if _, ok := g.GetRelation(rel.From, id, rel.Type); !ok {
+				inferredRel := graph.NewRelation(rel.From, id, rel.Type, rel.Weight*0.8)
+				inferred = append(inferred, inferredRel)
 			}
 		}
 	}

@@ -117,34 +117,6 @@ func TestNERExtractor_PatternBased(t *testing.T) {
 	require.GreaterOrEqual(t, len(entities), 2, "expected at least 2 entities")
 }
 
-// --- Mockery-generated NERExtractor mock tests ---
-
-func TestMockNERExtractor_Extract(t *testing.T) {
-	m := new(MockNERExtractor)
-	expected := []*Entity{
-		NewEntity("alice", "Alice", EntityPerson),
-	}
-	m.On("Extract", "Alice works at Google").Return(expected, nil)
-
-	entities, err := m.Extract("Alice works at Google")
-
-	require.NoError(t, err)
-	assert.Len(t, entities, 1)
-	assert.Equal(t, "alice", entities[0].ID)
-	m.AssertExpectations(t)
-}
-
-func TestMockNERExtractor_Extract_Error(t *testing.T) {
-	m := new(MockNERExtractor)
-	m.On("Extract", "fail").Return([]*Entity{}, assert.AnError)
-
-	entities, err := m.Extract("fail")
-
-	assert.Error(t, err)
-	assert.Empty(t, entities)
-	m.AssertExpectations(t)
-}
-
 // --- HeuristicNER tests ---
 
 func TestHeuristicNER_SingleWordEntities(t *testing.T) {

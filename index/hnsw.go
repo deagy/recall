@@ -25,11 +25,13 @@ type MemoryIndex struct {
 	bm25               *bm25.BM25
 	hnsw               *HNSW
 	hnswEnabled        bool
+	hnswThreshold      int             // chunk count above which HNSW activates (see SetHNSWThreshold)
 	deleted            map[string]bool // tombstones for HNSW
 	tombstoneThreshold float64         // ratio of deleted entries to trigger rebuild
 }
 
-// HNSWThreshold is the number of chunks above which HNSW is used for search.
+// HNSWThreshold is the default number of chunks above which HNSW is used
+// for search. Per-index overrides are available via MemoryIndex.SetHNSWThreshold.
 const HNSWThreshold = 1000
 
 // HNSWConfig holds configuration for the HNSW index.
@@ -93,7 +95,7 @@ func (m *MemoryIndex) AddBatch(_ context.Context, chunks []*core.Chunk) error {
 // Callers must hold m.mu.
 func (m *MemoryIndex) syncHNSW(chunk *core.Chunk) {
 	if !m.hnswEnabled {
-		if len(m.chunks) > HNSWThreshold {
+		if len(m.chunks) > m.hnswThreshold {
 			m.buildHNSW()
 		}
 		return
@@ -159,8 +161,21 @@ func NewMemoryIndex(namespace string, dimension int) *MemoryIndex {
 		dimension:          dimension,
 		chunks:             make(map[string]*core.Chunk),
 		bm25:               bm25.New(bm25.DefaultConfig()),
+		hnswThreshold:      HNSWThreshold,
 		tombstoneThreshold: 0.2, // rebuild when 20% of entries are deleted
 	}
+}
+
+// SetHNSWThreshold overrides the chunk count above which HNSW search
+// activates (default HNSWThreshold). It only takes effect before the HNSW
+// graph has been built; a non-positive value restores the default.
+func (m *MemoryIndex) SetHNSWThreshold(n int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if n <= 0 {
+		n = HNSWThreshold
+	}
+	m.hnswThreshold = n
 }
 
 // Search finds the most similar chunks to the given query embedding.
@@ -175,7 +190,7 @@ func (m *MemoryIndex) Search(_ context.Context, query []float32, opts SearchOpti
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	if m.hnswEnabled && len(m.chunks) > HNSWThreshold {
+	if m.hnswEnabled && len(m.chunks) > m.hnswThreshold {
 		return m.searchHNSW(query, opts)
 	}
 	return m.searchBruteForce(query, opts)

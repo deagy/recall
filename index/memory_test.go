@@ -360,3 +360,46 @@ func TestMemoryIndex_SearchBM25_DeletePrunes(t *testing.T) {
 	require.NoError(t, idx.Delete(context.Background(), "c3"))
 	assert.Empty(t, idx.SearchBM25("Rust"), "deleted chunk must be pruned from keyword index")
 }
+
+func TestDefaultSearchOptions(t *testing.T) {
+	assert.Equal(t, 10, DefaultSearchOptions(0).TopK, "non-positive TopK must default to 10")
+	assert.Equal(t, 10, DefaultSearchOptions(-3).TopK)
+	assert.Equal(t, 25, DefaultSearchOptions(25).TopK, "positive TopK must be preserved")
+	assert.Zero(t, DefaultSearchOptions(5).MinScore)
+}
+
+func TestNewHNSW_Defaults(t *testing.T) {
+	h := NewHNSW(4, HNSWConfig{})
+	assert.Equal(t, 16, h.cfg.M)
+	assert.Equal(t, 32, h.cfg.M0, "M0 must default to 2*M")
+	assert.Equal(t, 200, h.cfg.EfConstruction)
+	assert.Equal(t, 50, h.cfg.EfSearch)
+	require.NotNil(t, h.rng)
+}
+
+func TestMemoryIndex_SetHNSWThreshold(t *testing.T) {
+	idx := NewMemoryIndex("test", 3)
+	assert.Equal(t, HNSWThreshold, idx.hnswThreshold, "default threshold must be HNSWThreshold")
+
+	idx.SetHNSWThreshold(5)
+	assert.Equal(t, 5, idx.hnswThreshold)
+
+	idx.SetHNSWThreshold(0)
+	assert.Equal(t, HNSWThreshold, idx.hnswThreshold, "non-positive value must restore the default")
+
+	// Cross a low threshold so HNSW activates early, and verify search
+	// still returns exact nearest neighbors on the small graph.
+	idx.SetHNSWThreshold(2)
+	chunks := makeTestChunks(3)
+	extra := []*core.Chunk{
+		{ID: "c4", Content: "extra one", Embedding: makeEmbed(3, 0.2, 0.7, 0)},
+		{ID: "c5", Content: "extra two", Embedding: makeEmbed(3, 0.9, 0.1, 0.1)},
+	}
+	require.NoError(t, idx.AddBatch(context.Background(), append(chunks, extra...)))
+
+	require.True(t, idx.hnswEnabled, "HNSW must activate above the lowered threshold")
+	res, err := idx.Search(context.Background(), makeEmbed(3, 0, 0, 1), SearchOptions{TopK: 1})
+	require.NoError(t, err)
+	require.Len(t, res, 1)
+	assert.Equal(t, "c3", res[0].Chunk.ID, "activated HNSW must still find the exact nearest neighbor")
+}

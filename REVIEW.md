@@ -13,15 +13,17 @@ _Reviewed: 2026-07-18 · Scope: full codebase (~25.7k LOC, 18 packages)_
 | Coverage ≥80% target | ❌ 6 packages below (see table) |
 | CI (`.github/workflows/go.yml`) | ✅ fixed 2026-08-17 — vet, gofmt gate, `-race` tests, smoke bench |
 
-**Coverage vs. the >80% target** (*re-measured 2026-08-17 after the mock removal — `store`
-jumped 49.9% → 85.7%, `core` → 100%):
+**Coverage vs. the >80% target** — ✅ *All 14 packages above target (re-measured 2026-08-17):*
 
-| Gap | Package | Coverage |
-|---|---|---|
-| −40 | `llm` | 40.2% |
-| −23 | `distributed` | 57.5% |
-| −5 | `index` | 75.5% |
-| −5 | `reasoning` | 74.9% |
+| Package | Coverage | Package | Coverage |
+|---|---|---|---|
+| `core` | 100.0% | `index` | 95.5% |
+| `cache` | 97.8% | `query` | 89.1% |
+| `fuse` | 97.6% | `graph` | 87.0% |
+| `pipeline` | 97.5% | `llm` | 86.8% |
+| `bm25` | 96.6% | `store` | 85.7% |
+| `reasoning` | 96.4% | `chunker` | 84.3% |
+| `embedder` | 94.7% | `distributed` | 90.9% |
 
 ---
 
@@ -106,12 +108,17 @@ contribution a constant. A dead, identically-buggy `fuseScores` helper was remov
 
 ## 🟠 Medium issues
 
-- **`HNSWThreshold` hardcoded to 1,000** (`index/hnsw.go:32`), not configurable; README claims
-  "100K+ chunks" which isn't credible until bugs 1–3 are fixed.
-- **"Multi-namespace" is misleading** — `core.Document` has no namespace field;
-  `MemoryStore.Upload` uses `ns := s.config.Namespace`, so the `indexes` map always holds
-  exactly one entry. Isolated namespaces within one store are not actually supported; users
-  must create separate store instances. Decide: implement per-document namespaces or fix README.
+- **~~`HNSWThreshold` hardcoded to 1,000~~** — *Fixed 2026-08-17:* per-index
+  `MemoryIndex.SetHNSWThreshold(n)` (0 restores the default; the exported
+  `HNSWThreshold` constant remains as the default). Test
+  `TestMemoryIndex_SetHNSWThreshold` exercises early activation + exact recall.
+- **~~"Multi-namespace" is misleading~~ — *Decided + fixed 2026-08-17:*** `core.Document`
+  has no namespace field; `MemoryStore.Upload` uses `ns := s.config.Namespace`, so the
+  `indexes` map always holds exactly one entry. **Decision: correct the README** (done —
+  the feature bullet now reads "Namespaces — one store instance per namespace").
+  Per-document namespaces remain a *proposed feature* (would need a `Document.Namespace`
+  field, namespace-routed Upload, cross-namespace Search semantics) — out of scope for
+  this review pass.
 - **~~`_ = idx.Delete(...)`~~ at `store/memory.go:313`** — *Fixed 2026-08-17 (bug 6):*
   `DeleteDocument` now captures and returns the first `Delete` error.
   **~~Wrong sentinel for nil document~~** — *Fixed 2026-08-17:* new
@@ -232,7 +239,11 @@ contribution a constant. A dead, identically-buggy `fuseScores` helper was remov
    regression tests in `index/memory_test.go` + `store/hybrid_fusion_test.go`)*;
    ~~fix CI bench step~~ ✅ *Done 2026-08-17* (vet + gofmt gate + `-race` + smoke bench);
    ~~move mocks to test files~~ ✅ *Done 2026-08-17* (six unused mockery files deleted;
-   `MockChunker` inlined as a test-local double);
-   remaining: raise `store`/`llm`/
-   `distributed` coverage, decide multi-namespace (implement or correct README).
+   `MockChunker` inlined as a test-local double; five more dead mockery files removed from
+   `index/`, `reasoning/`, `graph/`, `fuse/` along with their mock-self-tests);
+   ~~raise `store`/`llm`/`distributed` coverage~~ ✅ *Done 2026-08-17* — **all 14 packages
+   now above the 80% target** (`llm` 40.2→86.8 via httptest backend suites,
+   `distributed` 57.5→90.9, `reasoning` 74.9→96.4, `index` 75.5→95.5);
+   ~~decide multi-namespace~~ ✅ *Decided 2026-08-17* (README corrected; per-document
+   namespaces deferred as a proposed feature). **Housekeeping complete.**
 

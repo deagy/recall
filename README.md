@@ -14,7 +14,7 @@ A Go library for building Retrieval-Augmented Generation (RAG) applications. Rec
 - **RAG Pipeline** — Context assembly, prompt templating, token management
 - **Knowledge Graph** — Entity/relation extraction, graph traversal (BFS/DFS), transitive closure, path finding, common-neighbor inference
 - **Multi-hop Reasoning** — Pluggable inference rules (transitive, symmetric, anti-symmetric), depth-limited path exploration, confidence propagation, natural language query → graph reasoning
-- **Multi-namespace** — Isolated knowledge spaces within a single store
+- **Namespaces** — Isolated knowledge spaces (one store instance per namespace; see usage below)
 - **Distributed Storage** — Consistent hashing, automatic sharding, scatter-gather search, replication strategies (primary-replica, quorum, all-nodes)
 - **Semantic Chunking** — Similarity-based text splitting, streaming processing, chunk quality metrics, adaptive sizing
 - **Graph Embeddings** — TransE-based entity/relation embeddings, link prediction, entity similarity search, knowledge graph completion
