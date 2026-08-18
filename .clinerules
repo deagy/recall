@@ -18,7 +18,8 @@ Recall is a Go library for building Retrieval-Augmented Generation (RAG) applica
 recall/
 ├── core/           # Data types: Chunk, Document, Value, errors
 ├── chunker/        # Text chunking: Fixed, Recursive strategies
-├── embedder/       # Embedding interface + Mock implementation
+├── embedder/       # Embedding interface + Mock, OpenAI, Cohere, Ollama, ONNX (local) + pipeline
+├── loader/         # Document loaders: Text, Markdown, CSV, JSON, Directory
 ├── index/          # Storage index: Memory (brute-force + HNSW), filters
 ├── store/          # High-level store: Memory + SQLite backends, GraphStore
 ├── pipeline/       # RAG pipeline: context assembly, templates, queries

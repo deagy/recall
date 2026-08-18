@@ -134,14 +134,14 @@ there.
 **Goal:** Support ingesting documents from various formats and sources.
 
 ### 21.1 Document Loaders
-- [ ] `loader.TextLoader` — plain text files
-- [ ] `loader.MarkdownLoader` — Markdown with heading-based chunking
+- [x] `loader.TextLoader` — plain text files (optional max-bytes cap)
+- [x] `loader.MarkdownLoader` — Markdown with heading-based chunking (ATX sections, breadcrumb metadata, slug IDs)
 - [ ] `loader.HTMLLoader` — HTML with content extraction (goquery)
 - [ ] `loader.PDFLoader` — PDF parsing (pure Go: `pdfcpu` or `unipdf`)
 - [ ] `loader.DocxLoader` — DOCX extraction (pure Go: `unioffice`)
-- [ ] `loader.CSVLoader` — CSV with configurable column mapping
-- [ ] `loader.JSONLoader` — JSON with nested extraction
-- [ ] `loader.DirectoryLoader` — recursive file system scanning
+- [x] `loader.CSVLoader` — CSV with configurable column mapping (header/separator/ID/content columns)
+- [x] `loader.JSONLoader` — JSON with nested extraction (dotted field paths, object or array)
+- [x] `loader.DirectoryLoader` — recursive file system scanning (per-extension dispatch, partial-failure reporting)
 
 ### 21.2 Source Connectors
 - [ ] `connector.WebConnector` — fetch URLs with rate limiting
