@@ -6,7 +6,6 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/deagy/recall/bm25"
 	"github.com/deagy/recall/chunker"
 	"github.com/deagy/recall/core"
 	"github.com/deagy/recall/embedder"
@@ -20,7 +19,6 @@ type MemoryStore struct {
 	embedder  embedder.Embedder
 	chunker   chunker.Chunker
 	indexes   map[string]*index.MemoryIndex
-	bm25s     map[string]*bm25.BM25
 	docChunks map[string]map[string]bool // docID -> set of chunkIDs
 }
 
@@ -41,7 +39,6 @@ func NewMemoryStore(cfg Config) (*MemoryStore, error) {
 		embedder:  cfg.Embedder,
 		chunker:   cfg.ChunkerFactory(chunker.DefaultConfig()),
 		indexes:   make(map[string]*index.MemoryIndex),
-		bm25s:     make(map[string]*bm25.BM25),
 		docChunks: make(map[string]map[string]bool),
 	}, nil
 }
@@ -88,21 +85,12 @@ func (s *MemoryStore) Upload(ctx context.Context, doc *core.Document, content st
 		idx = index.NewMemoryIndex(ns, s.embedder.Dimension())
 		s.indexes[ns] = idx
 	}
-	bm25Idx, ok := s.bm25s[ns]
-	if !ok {
-		bm25Idx = bm25.New(bm25.DefaultConfig())
-		s.bm25s[ns] = bm25Idx
-	}
 	s.mu.Unlock()
 
-	// Add chunks to the index (also indexes BM25 internally)
+	// Add chunks to the index (also indexes BM25 internally; the index is
+	// the single keyword source and prunes it on Delete).
 	if err := idx.AddBatch(ctx, chunks); err != nil {
 		return fmt.Errorf("indexing: %w", err)
-	}
-
-	// Add chunks to BM25 index
-	for _, c := range chunks {
-		bm25Idx.AddDocument(c.ID, c.Content)
 	}
 
 	// Track document -> chunk mappings
@@ -172,12 +160,13 @@ func (s *MemoryStore) SearchHybrid(ctx context.Context, query string, opts index
 	}
 	s.mu.RUnlock()
 
-	// Perform BM25 search across all namespaces
+	// Perform BM25 keyword search across all namespaces. Each index's
+	// internal BM25 is the single keyword source: it is pruned on every
+	// Delete, so deleted chunks never score here.
 	bm25ResultsMap := make(map[string]float64) // chunkID -> BM25 score
 	s.mu.RLock()
-	for _, bm25Idx := range s.bm25s {
-		results := bm25Idx.Search(query)
-		for _, r := range results {
+	for _, idx := range s.indexes {
+		for _, r := range idx.SearchBM25(query) {
 			bm25ResultsMap[r.DocID] = r.Score
 		}
 	}
@@ -300,16 +289,19 @@ func (s *MemoryStore) DeleteDocument(docID string) error {
 	}
 	s.mu.Unlock()
 
+	firstErr := error(nil)
 	for id := range chunkIDs {
 		for _, idx := range indexes {
-			_ = idx.Delete(context.Background(), id)
+			if err := idx.Delete(context.Background(), id); err != nil && firstErr == nil {
+				firstErr = err
+			}
 		}
 	}
 
 	s.mu.Lock()
 	delete(s.docChunks, docID)
 	s.mu.Unlock()
-	return nil
+	return firstErr
 }
 
 // Count returns the total number of chunks across all namespaces.

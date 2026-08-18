@@ -242,3 +242,43 @@ func TestSQLiteStore_SearchHybrid_RRFIncludesFTSOnlyMatch(t *testing.T) {
 	assert.NotEmpty(t, hybridTargetID(results, "quantum fluoroscope"),
 		"RRF fusion must include FTS keyword-only matches")
 }
+
+// --- Bug 6: single keyword index per namespace, pruned on delete ---
+//
+// MemoryStore used to keep a second, store-level BM25 instance per
+// namespace that DeleteChunk/DeleteDocument never pruned, so deleted
+// chunks kept scoring in hybrid search forever. The fix removes the
+// duplicate: each index's internal BM25 is the single keyword source
+// and is pruned by MemoryIndex.Delete.
+
+func TestMemoryStore_DeleteDocumentPrunesKeywordIndex(t *testing.T) {
+	s := newTestStore(t)
+	uploadHybridCorpus(t, s, 3)
+
+	idx := s.indexes["test"]
+	require.NotEmpty(t, idx.SearchBM25(keywordOnlyQuery),
+		"keyword index must contain the target before deletion")
+
+	require.NoError(t, s.DeleteDocument("doc-target"))
+	assert.Empty(t, idx.SearchBM25(keywordOnlyQuery),
+		"DeleteDocument must prune the keyword index")
+
+	// And hybrid search must not resurrect the deleted document.
+	results, err := s.SearchHybrid(context.Background(), keywordOnlyQuery,
+		index.SearchOptions{TopK: 10, BM25Weight: 1.0})
+	require.NoError(t, err)
+	assert.Empty(t, hybridTargetID(results, "quantum fluoroscope"),
+		"deleted document must not match keyword search")
+}
+
+func TestMemoryStore_DeleteChunkPrunesKeywordIndex(t *testing.T) {
+	s := newTestStore(t)
+	uploadHybridCorpus(t, s, 2)
+
+	idx := s.indexes["test"]
+	require.NotEmpty(t, idx.SearchBM25(keywordOnlyQuery))
+
+	require.NoError(t, s.DeleteChunk("doc-target::chunk-0"))
+	assert.Empty(t, idx.SearchBM25(keywordOnlyQuery),
+		"DeleteChunk must prune the keyword index")
+}

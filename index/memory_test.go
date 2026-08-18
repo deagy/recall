@@ -334,3 +334,29 @@ func TestMemoryIndex_Add_SingleChunk(t *testing.T) {
 	require.NoError(t, idx.Add(context.Background(), chunk))
 	assert.Equal(t, 1, idx.Count(), "expected count 1")
 }
+
+func TestMemoryIndex_SearchBM25(t *testing.T) {
+	idx := NewMemoryIndex("test", 4)
+	require.NoError(t, idx.AddBatch(context.Background(), makeTestChunks(4)))
+
+	res := idx.SearchBM25("programming")
+	require.Len(t, res, 2, "only c1 and c2 mention \"programming\"")
+	got := map[string]bool{}
+	for _, r := range res {
+		got[r.DocID] = true
+	}
+	assert.True(t, got["c1"] && got["c2"], "expected c1 and c2, got %v", got)
+	assert.Empty(t, idx.SearchBM25("nonexistent"), "no corpus term must yield no matches")
+}
+
+func TestMemoryIndex_SearchBM25_DeletePrunes(t *testing.T) {
+	idx := NewMemoryIndex("test", 4)
+	require.NoError(t, idx.AddBatch(context.Background(), makeTestChunks(4)))
+
+	res := idx.SearchBM25("Rust")
+	require.Len(t, res, 1)
+	assert.Equal(t, "c3", res[0].DocID)
+
+	require.NoError(t, idx.Delete(context.Background(), "c3"))
+	assert.Empty(t, idx.SearchBM25("Rust"), "deleted chunk must be pruned from keyword index")
+}

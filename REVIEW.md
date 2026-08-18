@@ -78,12 +78,18 @@ Upload/Search test (run with `-race` in CI).
 **Fix:** keep `hashRing` sorted (re-sort after add/remove, use `sort.Search` for walks);
 prune the slice on node removal; fix replica wrap-around.
 
-### 6. `MemoryStore.Upload` double-indexes BM25 and never prunes it
+### ~~6. `MemoryStore.Upload` double-indexes BM25 and never prunes it~~ — *Fixed 2026-08-17:*
 `store/memory.go:99-106`
 Chunks go into `MemoryIndex`'s internal BM25 **and** the store's own `s.bm25s` instance.
 The index-internal one is never used by any search path (dead memory per chunk); the
 store-level one is never `RemoveDocument`-ed on `DeleteChunk`/`DeleteDocument`.
-**Fix:** keep a single BM25 index per namespace; call `RemoveDocument` on all delete paths.
+**Fix applied:** kept the *index-internal* BM25 as the single keyword source (the
+inverse of the suggested direction, but strictly safer: `MemoryIndex.Delete` prunes
+it on every existing and future delete path, so the store can't forget). Removed the
+`MemoryStore.bm25s` map entirely; `SearchHybrid` now reads keyword scores through the
+new `MemoryIndex.SearchBM25`. Regression tests: `TestMemoryStore_DeleteDocument
+PrunesKeywordIndex`, `TestMemoryStore_DeleteChunkPrunesKeywordIndex`,
+`TestMemoryIndex_SearchBM25*`.
 
 ### ~~7. Hybrid search can never return keyword-only matches~~ — *Fixed 2026-08-17 (see action plan #5):*
 `store/memory.go:232-261` (`fuseMap`)
@@ -108,9 +114,9 @@ contribution a constant. A dead, identically-buggy `fuseScores` helper was remov
   `MemoryStore.Upload` uses `ns := s.config.Namespace`, so the `indexes` map always holds
   exactly one entry. Isolated namespaces within one store are not actually supported; users
   must create separate store instances. Decide: implement per-document namespaces or fix README.
-- **`_ = idx.Delete(...)`** at `store/memory.go:313` violates the "never use `_` for error
-  returns" rule; same file returns the wrong sentinel (`ErrInvalidChunk` for a nil document,
-  line 52).
+- **~~`_ = idx.Delete(...)`~~ at `store/memory.go:313`** — *Fixed 2026-08-17 (bug 6):*
+  `DeleteDocument` now captures and returns the first `Delete` error. Same file still
+  returns the wrong sentinel (`ErrInvalidChunk` for a nil document, line 52) — open.
 - **`context.Background()` in user-facing paths** — `store/memory.go:289,313` and
   `store/sqlite.go:475-504` discard the caller's context.
 - **Hand-rolled mocks in production packages** — `store/mock_*.go`, `core/mock_Value.go`,
@@ -210,7 +216,10 @@ contribution a constant. A dead, identically-buggy `fuseScores` helper was remov
    end-to-end tests fail against the pre-fix code (memory dropped the keyword-only
    chunk; SQLite "pure BM25" returned a distractor because no FTS table existed).
 6. **Housekeeping** — ~~`gofmt -s -w .`~~ ✅ *Done 2026-08-17* (12 files, alignment-only
-   diff, full test suite green); remaining: fix CI bench step, move mocks to test files,
-   de-duplicate BM25 + prune on delete, raise `store`/`llm`/`distributed` coverage,
-   decide multi-namespace (implement or correct README).
+   diff, full test suite green); ~~de-duplicate BM25 + prune on delete~~ ✅ *Done
+   2026-08-17 (bug 6 — index-internal BM25 is the single keyword source; store-level
+   `s.bm25s` removed; `DeleteChunk`/`DeleteDocument` prune via `MemoryIndex.Delete`;
+   regression tests in `index/memory_test.go` + `store/hybrid_fusion_test.go`)*;
+   remaining: fix CI bench step, move mocks to test files, raise `store`/`llm`/
+   `distributed` coverage, decide multi-namespace (implement or correct README).
 

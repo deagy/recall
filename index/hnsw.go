@@ -280,6 +280,16 @@ func (m *MemoryIndex) GetChunk(id string) (*core.Chunk, bool) {
 	return c, ok
 }
 
+// SearchBM25 returns keyword (BM25) matches for the query from this
+// index's internal BM25 index, sorted by score descending. This is the
+// index's single source of keyword state: documents are added on
+// Add/AddBatch and pruned on Delete, so deleted chunks never match.
+func (m *MemoryIndex) SearchBM25(query string) []bm25.SearchResult {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.bm25.Search(query)
+}
+
 // matchesAllFilters returns true if the chunk matches all filters.
 func matchesAllFilters(chunk *core.Chunk, filters []Filter) bool {
 	for _, f := range filters {
