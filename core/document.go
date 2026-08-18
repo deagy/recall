@@ -18,6 +18,12 @@ type Document struct {
 	// Source is the source location (file path, URL, etc.) of the document.
 	Source string
 
+	// Namespace optionally overrides the store's default namespace for this
+	// document's chunks. When empty, the store decides (its configured
+	// namespace). Supported by the Memory and SQLite stores; search spans
+	// all namespaces present in a store.
+	Namespace string
+
 	// Tags are arbitrary labels for categorizing the document.
 	Tags []string
 

@@ -77,8 +77,12 @@ func (s *MemoryStore) Upload(ctx context.Context, doc *core.Document, content st
 		chunk.Embedding = embeddings[i]
 	}
 
-	// Get or create index for the document's namespace
-	ns := s.config.Namespace
+	// Get or create index for the document's namespace (per-document
+	// override falls back to the store's configured namespace).
+	ns := doc.Namespace
+	if ns == "" {
+		ns = s.config.Namespace
+	}
 	s.mu.Lock()
 	idx, ok := s.indexes[ns]
 	if !ok {

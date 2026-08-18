@@ -167,6 +167,48 @@ func TestSQLiteStore_DeleteDocument_NonExistent(t *testing.T) {
 	assert.NoError(t, err, "delete non-existent document should not fail")
 }
 
+// TestSQLiteStore_Upload_DocumentNamespaceOverride verifies per-document
+// namespace routing: a Document with a Namespace field is stored in that
+// namespace instead of the store default, vector search spans both
+// namespaces, and DeleteDocument removes the document's chunks regardless
+// of which namespace they live in.
+func TestSQLiteStore_Upload_DocumentNamespaceOverride(t *testing.T) {
+	s := newTestSQLiteStore(t)
+	ctx := context.Background()
+
+	doc1 := core.NewDocument("doc-default", "Default", "source")
+	require.NoError(t, s.Upload(ctx, doc1, "Default namespace content about solar panels and battery storage in a home energy system."))
+
+	doc2 := core.NewDocument("doc-team", "Team", "source")
+	doc2.Namespace = "team-a"
+	require.NoError(t, s.Upload(ctx, doc2, "Team specific content about quarterly performance review and roadmap planning discussion."))
+
+	ns := s.Namespaces()
+	assert.Contains(t, ns, "test", "expected default namespace")
+	assert.Contains(t, ns, "team-a", "expected the document's custom namespace")
+
+	// Vector search spans namespaces: a custom-namespace document is
+	// retrievable through the store.
+	results, err := s.Search(ctx, "quarterly performance review roadmap", index.DefaultSearchOptions(10))
+	require.NoError(t, err, "search should not fail")
+	teamChunkIDs := map[string]bool{}
+	for _, r := range results {
+		if r.Chunk.DocumentRef == "doc-team" {
+			teamChunkIDs[r.Chunk.ID] = true
+		}
+	}
+	assert.NotEmpty(t, teamChunkIDs, "search must span the document's custom namespace")
+
+	// DeleteDocument removes all chunks of the document.
+	require.NoError(t, s.DeleteDocument(ctx, "doc-team"), "delete should not fail")
+	assert.NotContains(t, s.Namespaces(), "team-a", "team-a must have no chunks left")
+	assert.Contains(t, s.Namespaces(), "test", "default namespace must be untouched")
+	for id := range teamChunkIDs {
+		_, ok := s.GetChunk(id)
+		assert.False(t, ok, "team chunk %s must be gone after DeleteDocument", id)
+	}
+}
+
 func TestSQLiteStore_Upload_EmptyDocID(t *testing.T) {
 	s := newTestSQLiteStore(t)
 	ctx := context.Background()

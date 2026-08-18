@@ -150,7 +150,10 @@ func (s *SQLiteStore) Upload(ctx context.Context, doc *core.Document, content st
 		chunk.Embedding = embeddings[i]
 	}
 
-	ns := s.config.Namespace
+	ns := doc.Namespace
+	if ns == "" {
+		ns = s.config.Namespace
+	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -285,13 +288,14 @@ func (s *SQLiteStore) Search(ctx context.Context, query string, opts index.Searc
 		return s.searchHNSW(ctx, queryEmbed, opts)
 	}
 
-	// Brute-force vector search
+	// Brute-force vector search. Search spans every namespace present in
+	// this store (matching MemoryStore and the HNSW path above, which both
+	// search the whole store), so documents routed to a custom
+	// Document.Namespace remain retrievable.
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT e.chunk_id, c.content, c.document_ref, c.chunk_index, c.metadata, e.namespace, e.embedding
 		 FROM embeddings e
-		 JOIN chunks c ON e.chunk_id = c.id
-		 WHERE e.namespace = ?`,
-		s.config.Namespace)
+		 JOIN chunks c ON e.chunk_id = c.id`)
 	if err != nil {
 		return nil, fmt.Errorf("querying embeddings: %w", err)
 	}

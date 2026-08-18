@@ -599,6 +599,45 @@ func TestMemoryStore_Upload_MultipleNamespaces(t *testing.T) {
 	assert.Contains(t, ns2, "ns2", "expected ns2 namespace")
 }
 
+// TestMemoryStore_Upload_DocumentNamespaceOverride verifies per-document
+// namespace routing: a Document with a Namespace field is stored in that
+// namespace instead of the store default, search spans both namespaces,
+// and DeleteDocument removes only that document's chunks.
+func TestMemoryStore_Upload_DocumentNamespaceOverride(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+	ctx := context.Background()
+
+	uploadAndVerify(t, s, "doc-default", "Default namespace content about solar panels and battery storage in a home energy system.")
+	defaultCount := s.Count()
+
+	doc := core.NewDocument("doc-team", "Team Doc", "source")
+	doc.Namespace = "team-a"
+	err := s.Upload(ctx, doc, "Team specific content about quarterly performance review and roadmap planning discussion.")
+	require.NoError(t, err, "upload with document namespace should not fail")
+	assert.Greater(t, s.Count(), defaultCount, "expected team-a chunks to be added")
+	assert.ElementsMatch(t, []string{"test", "team-a"}, s.Namespaces(), "expected default and team-a namespaces")
+
+	// Search spans both namespaces: the team document is retrievable.
+	teamChunkIDs := map[string]bool{}
+	results, err := s.Search(ctx, "quarterly performance review roadmap", index.DefaultSearchOptions(10))
+	require.NoError(t, err, "search should not fail")
+	for _, r := range results {
+		if r.Chunk.DocumentRef == "doc-team" {
+			teamChunkIDs[r.Chunk.ID] = true
+		}
+	}
+	assert.NotEmpty(t, teamChunkIDs, "search must find chunks in the document's custom namespace")
+
+	// DeleteDocument removes the team document's chunks only.
+	require.NoError(t, s.DeleteDocument(ctx, "doc-team"), "delete team document should not fail")
+	assert.Equal(t, defaultCount, s.Count(), "only the team document's chunks should be deleted")
+	for id := range teamChunkIDs {
+		_, ok := s.GetChunk(id)
+		assert.False(t, ok, "team chunk %s must be gone after DeleteDocument", id)
+	}
+}
+
 func TestMemoryStore_Upload_LargeDocument(t *testing.T) {
 	s := newTestStore(t)
 	defer s.Close()
