@@ -1,0 +1,165 @@
+# Project Review — Recall
+
+_Reviewed: 2026-07-18 · Scope: full codebase (~25.7k LOC, 18 packages)_
+
+## Overview & Health
+
+| Check | Result |
+|---|---|
+| `go build ./...` | ✅ passes |
+| `go vet ./...` | ✅ clean |
+| `go test ./... -count=1` | ✅ all pass (706 test funcs, ~13.7k test LOC) |
+| `gofmt -l .` | ❌ **13 files unformatted** (violates project rules) |
+| Coverage ≥80% target | ❌ 6 packages below (see table) |
+| CI (`.github/workflows/go.yml`) | ⚠️ **Bench step fails** — `go test -bench=.` with no package spec errors: `no Go files in ...` |
+
+**Coverage vs. the >80% target:**
+
+| Gap | Package | Coverage |
+|---|---|---|
+| −40 | `llm` | 40.2% |
+| −30 | `store` | 49.9% |
+| −24 | `distributed` | 55.8% |
+| −12 | `core` | 67.7% |
+| −9 | `index` | 70.9% |
+| −5 | `reasoning` | 74.9% |
+| −2 | `chunker` | 78.1% |
+
+---
+
+## 🔴 Critical bugs (correctness)
+
+### 1. HNSW silently drops chunks added after activation
+`index/hnsw.go:53-70` (`MemoryIndex.Add`/`AddBatch`), `store/sqlite.go:171-173` (`SQLiteStore.Upload`)
+`buildHNSW()` only runs when `!hnswEnabled`. Once HNSW activates past 1,000 chunks, every
+subsequent `Add`/`Upload` goes into `m.chunks` and BM25 but **never into the HNSW graph**, so
+new documents become invisible to vector search — the realistic case for a growing corpus.
+**Fix:** in `Add`/`AddBatch`, when `hnswEnabled`, also call `m.hnsw.Add(id, embedding)`.
+
+### 2. Deleted chunks are still returned from HNSW search
+`index/hnsw.go:105-124` (`Delete`), `212-224` (`searchHNSW`)
+In HNSW mode `Delete` only sets a tombstone (rebuild fires only at >20% tombstone ratio),
+but `searchHNSW` never checks `m.deleted[id]` and `Delete` doesn't remove the chunk from
+`m.chunks`. Deleted chunks remain searchable until a rebuild; `Count()` and `GetChunk`
+still see them too.
+**Fix:** filter `m.deleted[id]` in `searchHNSW` and `GetChunk`; consider removing from
+`m.chunks` immediately.
+
+### 3. HNSW graph construction is not real HNSW
+`index/hnsw.go:374-436` (`HNSW.Add`)
+During construction, `candidates` is seeded with a **single entry node** and never expanded —
+there is no greedy/beam search for ef-construction neighbors. Each node gets at most 1
+connection per level (plus the symmetric reverse link). The graph is a sparse
+"star-of-chains", so ANN recall degrades badly as it grows. Existing tests pass only because
+they are small and never assert a recall threshold against brute force.
+**Fix:** implement proper ef-construction neighbor search in `HNSW.Add`; add a recall
+regression test (e.g. top-100 recall ≥ 0.9 vs brute force on 10k random vectors).
+
+### 4. `SQLiteStore` has data races
+`store/sqlite.go`
+`s.mu` is declared but `Upload` writes `s.chunks` (~line 167) and `s.hnsw` (line 172 via
+`buildHNSW`) **without the lock**, while `Search`/`searchHNSW` read both lock-free (only
+`SearchHybrid`/`GetChunk`/`Delete*`/`Count`/`Namespaces`/`Close` take the lock).
+Concurrent `Upload` + `Search` is a genuine race.
+**Fix:** guard all `s.chunks`/`s.hnsw` access with `s.mu`; add a concurrent
+Upload/Search test (run with `-race` in CI).
+
+### 5. Consistent-hash ring is broken
+`distributed/cluster.go`
+- `hashRing` is an append-only slice that is **never sorted**; the ring walks in
+  `GetReplicaNodes`/`GetNodeForChunk` do `if vHash >= hash`, which only works on a sorted ring.
+  Shard placement is arbitrary and unstable.
+- `removeVirtualNodes` deletes map entries but **never prunes the `hashRing` slice** → stale
+  entries accumulate forever and can resolve to `c.virtualNodes[hash] == ""` → nil-node deref
+  risk in `GetReplicaNodes`.
+- The replica walk only scans `vHash > hash` (no wrap-around), so `ReplicationFactor` can't be
+  satisfied near the tail of the ring.
+- `Rebalance` is an exported no-op `TODO`.
+**Fix:** keep `hashRing` sorted (re-sort after add/remove, use `sort.Search` for walks);
+prune the slice on node removal; fix replica wrap-around.
+
+### 6. `MemoryStore.Upload` double-indexes BM25 and never prunes it
+`store/memory.go:99-106`
+Chunks go into `MemoryIndex`'s internal BM25 **and** the store's own `s.bm25s` instance.
+The index-internal one is never used by any search path (dead memory per chunk); the
+store-level one is never `RemoveDocument`-ed on `DeleteChunk`/`DeleteDocument`.
+**Fix:** keep a single BM25 index per namespace; call `RemoveDocument` on all delete paths.
+
+### 7. Hybrid search can never return keyword-only matches
+`store/memory.go:232-261` (`fuseMap`)
+Fusion only iterates the vector TopK and explicitly skips IDs present only in BM25
+("Chunk only in BM25 results, skip"). A strong keyword match with weak vector similarity is
+silently dropped — hybrid degrades to vector search with BM25 re-ranking.
+**Fix:** look up BM25-only chunks from the index and include them in fusion.
+
+---
+
+## 🟠 Medium issues
+
+- **`HNSWThreshold` hardcoded to 1,000** (`index/hnsw.go:32`), not configurable; README claims
+  "100K+ chunks" which isn't credible until bugs 1–3 are fixed.
+- **"Multi-namespace" is misleading** — `core.Document` has no namespace field;
+  `MemoryStore.Upload` uses `ns := s.config.Namespace`, so the `indexes` map always holds
+  exactly one entry. Isolated namespaces within one store are not actually supported; users
+  must create separate store instances. Decide: implement per-document namespaces or fix README.
+- **`_ = idx.Delete(...)`** at `store/memory.go:313` violates the "never use `_` for error
+  returns" rule; same file returns the wrong sentinel (`ErrInvalidChunk` for a nil document,
+  line 52).
+- **`context.Background()` in user-facing paths** — `store/memory.go:289,313` and
+  `store/sqlite.go:475-504` discard the caller's context.
+- **Hand-rolled mocks in production packages** — `store/mock_*.go`, `core/mock_Value.go`,
+  `chunker/mock_*.go`, etc. are non-test files exported as part of the library API (they panic
+  at runtime by design). Move to `_test.go` files or `internal/mocks`; consider gomock
+  generation (`testify/mock` is already a dependency). Moving them to test files also lifts
+  `store`/`chunker`/`core` coverage numbers.
+- **`HNSW` RNG** — `rand.New(rand.NewSource(42))` (`index/hnsw.go:315`): deprecated
+  constructor (Go ≥1.20) and a fixed seed gives every index identical layer assignments.
+- **`HNSW.Search`** implements its own min-heap with O(n) scan + full `sort.Slice` per
+  iteration; use `container/heap`.
+- **`GetChunk` returns internal `*core.Chunk` pointers** (both stores) — callers can mutate
+  index state. Consider returning copies.
+- **`llm` package (40.2% coverage)** — `openai.go`/`ollama.go` HTTP paths thinly tested
+  (error mapping, headers, retries); highest risk of silent breakage.
+
+---
+
+## 🟡 Minor / process
+
+- **CI**: fix `go test -bench=.` → `go test ./... -bench=. -run=^$` (or drop the step); add
+  `go vet ./...`, a `gofmt -l` check, and `go test -race ./...` steps; consider `-count=1`.
+- **13 unformatted files**: `cache/` (5), `chunker/` (2), `distributed/` (4), `graph/` (2) —
+  `gofmt -s -w .` fixes all.
+- **Doc drift**: `.clinerules` says module `github.com/deagy/sdk/recall`; actual go.mod is
+  `github.com/deagy/recall`. README "100K+ chunks" claim needs the HNSW fixes to be credible.
+- **`coverage.out`** committed at repo root — build artifact; gitignore it.
+- Some commit messages contain literal `\n` strings (e.g. `a2a731e`) — cosmetic.
+
+---
+
+## ✅ What's genuinely good
+
+- **Clean architecture** — interface-driven layering (`Embedder`, `Chunker`, `Fusion`,
+  `InferenceRule`, `GraphStore`) with dependency injection; usable with no network deps.
+- **Strong test culture** — 706 tests, benchmarks in every perf-sensitive package, edge-case
+  test files, 9 packages at/above the 80% bar.
+- **Consistent discipline** — wrapped errors (`%w`), sentinel errors in `core/`, `RWMutex`
+  used consistently in `MemoryStore`/`MemoryIndex`/`Cluster`, no panics in real code paths,
+  zero-CGO holds (pure-Go sqlite driver).
+- **Good documentation** — README/PLANNING/ROADMAP/IMPROVEMENT_PLAN kept in sync per phase.
+
+---
+
+## Prioritized action plan
+
+1. **HNSW incremental add + tombstone filtering** (bugs 1, 2) — small changes, big correctness win.
+2. **SQLiteStore locking** (bug 4) — wrap `s.chunks`/`s.hnsw` mutations and reads in `s.mu`;
+   add concurrent Upload/Search test.
+3. **Real HNSW construction** (bug 3) — ef-construction neighbor search in `Add`; add recall
+   assertion test vs brute force.
+4. **Sorted hash ring + proper removal** (bug 5) — sort `hashRing` after mutation, prune on
+   `removeVirtualNodes`, fix wrap-around.
+5. **Hybrid fusion** (bug 7) — include BM25-only results via index lookup instead of skipping.
+6. **Housekeeping** — `gofmt -s -w .`, fix CI bench step, move mocks to test files,
+   de-duplicate BM25 + prune on delete, raise `store`/`llm`/`distributed` coverage,
+   decide multi-namespace (implement or correct README).
+
