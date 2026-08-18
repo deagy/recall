@@ -3,7 +3,9 @@ module github.com/deagy/recall
 go 1.26.5
 
 require (
+	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
 	github.com/stretchr/testify v1.11.1
+	golang.org/x/net v0.58.0
 	modernc.org/sqlite v1.56.0
 )
 

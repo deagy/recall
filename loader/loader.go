@@ -67,6 +67,12 @@ func ForExtension(ext string) (Loader, error) {
 		return &CSVLoader{}, nil
 	case ".json":
 		return &JSONLoader{}, nil
+	case ".html", ".htm":
+		return &HTMLLoader{}, nil
+	case ".pdf":
+		return &PDFLoader{}, nil
+	case ".docx":
+		return &DocxLoader{}, nil
 	default:
 		return nil, &UnsupportedExtError{Ext: ext}
 	}

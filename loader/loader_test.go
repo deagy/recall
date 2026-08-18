@@ -21,7 +21,7 @@ func TestForExtension(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, wantType, reflect.TypeOf(ld).String())
 	}
-	_, err := ForExtension(".pdf")
+	_, err := ForExtension(".doc")
 	require.Error(t, err)
 	assert.IsType(t, &UnsupportedExtError{}, err)
 }
