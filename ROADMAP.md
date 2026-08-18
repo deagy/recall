@@ -136,27 +136,27 @@ there.
 ### 21.1 Document Loaders
 - [x] `loader.TextLoader` — plain text files (optional max-bytes cap)
 - [x] `loader.MarkdownLoader` — Markdown with heading-based chunking (ATX sections, breadcrumb metadata, slug IDs)
-- [ ] `loader.HTMLLoader` — HTML with content extraction (goquery)
-- [ ] `loader.PDFLoader` — PDF parsing (pure Go: `pdfcpu` or `unipdf`)
-- [ ] `loader.DocxLoader` — DOCX extraction (pure Go: `unioffice`)
+- [x] `loader.HTMLLoader` — HTML with content extraction (pure-Go `golang.org/x/net/html`; drops script/style/nav/header/footer, block-aware line breaks, title capture)
+- [x] `loader.PDFLoader` — PDF plain-text extraction (pure-Go `ledongthuc/pdf`; page count in metadata; encrypted/scanned files yield errors)
+- [x] `loader.DocxLoader` — DOCX extraction (stdlib only: `archive/zip` + `encoding/xml` over `word/document.xml`)
 - [x] `loader.CSVLoader` — CSV with configurable column mapping (header/separator/ID/content columns)
 - [x] `loader.JSONLoader` — JSON with nested extraction (dotted field paths, object or array)
 - [x] `loader.DirectoryLoader` — recursive file system scanning (per-extension dispatch, partial-failure reporting)
 
 ### 21.2 Source Connectors
-- [ ] `connector.WebConnector` — fetch URLs with rate limiting
-- [ ] `connector.GitConnector` — clone and index git repositories
-- [ ] `connector.S3Connector` — S3 bucket indexing
-- [ ] `connector.GitHubConnector` — GitHub repo/issue indexing
-- [ ] `connector.DatabaseConnector` — SQL database table indexing
+- [x] `connector.WebConnector` — fetch URLs with rate limiting (token-bucket pacing, content-type filter, byte cap, HTML text extraction)
+- [x] `connector.GitConnector` — clone and index git repositories (shallow/full, git CLI via exec, temp-clone cleanup)
+- [x] `connector.S3Connector` — S3 bucket indexing (self-contained SigV4 signer — no AWS SDK — virtual + path style, prefix listing, MinIO-compatible)
+- [x] `connector.GitHubConnector` — GitHub repo/issue indexing (raw README + issues via REST, PRs filtered, optional token)
+- [x] `connector.DatabaseConnector` — SQL database table indexing (injected `*sql.DB`, column mapping, driver-agnostic)
 
 ### 21.3 Ingestion Pipeline
-- [ ] `ingest.Pipeline` orchestrating load → preprocess → chunk → embed → upload
-- [ ] `ingest.Deduplication` — content-hash based duplicate detection
-- [ ] `ingest.Validation` — schema validation for structured documents
-- [ ] `ingest.Progress` — progress tracking and callbacks
-- [ ] `ingest.Batch` — parallel batch ingestion with configurable concurrency
-- [ ] `ingest.Incremental` — delta ingestion (only new/changed documents)
+- [x] `ingest.Pipeline` orchestrating load → filter → transform → upload (chunk + embed + index via the store)
+- [x] `ingest.Deduplicator` — content-hash based duplicate detection (persistable JSON)
+- [x] `ingest.Validator` — schema validation for structured documents (size bounds, required metadata, source prefixes)
+- [x] `ingest.Progress` — thread-safe progress tracking with per-document and per-phase callbacks
+- [x] `ingest.RunBatch` — parallel batch ingestion across sources with configurable concurrency
+- [x] `ingest.Incremental` — delta ingestion (only new/changed documents, persisted state)
 
 **Estimated Effort:** 4–5 weeks
 **Priority:** Medium-High

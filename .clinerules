@@ -19,7 +19,9 @@ recall/
 ├── core/           # Data types: Chunk, Document, Value, errors
 ├── chunker/        # Text chunking: Fixed, Recursive strategies
 ├── embedder/       # Embedding interface + Mock, OpenAI, Cohere, Ollama, ONNX (local) + pipeline
-├── loader/         # Document loaders: Text, Markdown, CSV, JSON, Directory
+├── loader/         # Document loaders: Text, Markdown, CSV, JSON, HTML, PDF, DOCX, Directory
+├── connector/      # Source connectors: Web, Git, S3 (SigV4), GitHub, Database
+├── ingest/         # Ingestion pipeline: orchestration, dedup, validation, progress, batch, incremental
 ├── index/          # Storage index: Memory (brute-force + HNSW), filters
 ├── store/          # High-level store: Memory + SQLite backends, GraphStore
 ├── pipeline/       # RAG pipeline: context assembly, templates, queries
@@ -48,6 +50,7 @@ recall/
 ### Dependencies
 - **Zero CGO** for core functionality
 - **SQLite**: Use `modernc.org/sqlite` (pure Go driver, no CGO)
+- **Loader extras**: `golang.org/x/net` (HTML parsing) and `ledongthuc/pdf` (PDF text extraction) — both pure Go; DOCX/HTML text extraction otherwise stay stdlib
 - **No external LLM dependencies** — embedders are dependency-injected
 - **Run `go mod tidy`** after adding any new dependencies
 

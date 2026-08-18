@@ -20,7 +20,9 @@ A Go library for building Retrieval-Augmented Generation (RAG) applications. Rec
 - **Graph Embeddings** — TransE-based entity/relation embeddings, link prediction, entity similarity search, knowledge graph completion, model persistence via `Save`/`Load`
 - **Intelligent Caching** — LRU eviction, TTL-based expiration, query result caching, embedding caching, graph traversal caching, multi-level caching (L1/L2), cache warming
 - **Local ONNX Embeddings** — Pure-Go ONNX inference runtime (`embedder/onnx`) runs sentence-transformer ONNX exports with no CGO and no network; `embedder.OnnxEmbedder` accepts a tokenizer function and drops into the `embedder.Pipeline` failover chain
-- **Document Loaders** — `loader` package reads text, markdown (heading sections), CSV (column mapping), JSON (nested field paths), and whole directories into a uniform `Document` representation ready for upload
+- **Document Loaders** — `loader` package reads text, markdown (heading sections), CSV (column mapping), JSON (nested field paths), HTML (visible-text extraction), PDF (plain-text extraction), DOCX (OOXML paragraph extraction), and whole directories into a uniform `Document` representation ready for upload
+- **Source Connectors** — `connector` package fetches documents from the web (rate-limited), git repositories, S3-compatible buckets (self-contained SigV4, MinIO-friendly), GitHub repos/issues, and SQL tables
+- **Ingestion Pipeline** — `ingest` package orchestrates load → dedup → validation → transform → upload with thread-safe progress callbacks, parallel batch ingestion across sources, and incremental (delta) re-ingestion via persisted content hashes
 - **Zero CGO** — Pure Go standard library only for core; SQLite via pure Go driver
 
 ## Quick Start
@@ -469,7 +471,9 @@ recall/
 ├── core/           # Data types: Chunk, Document, Value, errors
 ├── chunker/        # Text chunking: Fixed, Recursive, Semantic, Streaming strategies
 ├── embedder/       # Embedding interface + Mock, OpenAI, Cohere, Ollama, ONNX (local) + pipeline
-├── loader/         # Document loaders (text, markdown, CSV, JSON, directory)
+├── loader/         # Document loaders (text, markdown, CSV, JSON, HTML, PDF, DOCX, directory)
+├── connector/      # Source connectors (web, git, S3+SigV4, GitHub, database)
+├── ingest/         # Ingestion pipeline (dedup, validation, progress, batch, incremental)
 ├── cache/          # Intelligent caching: LRU, TTL, query/embedding/graph caching, multi-level
 ├── index/          # Storage index: Memory (brute-force + HNSW), filters
 ├── store/          # High-level store: Memory + SQLite backends, GraphStore
@@ -515,7 +519,7 @@ recall/
 - [x] Phase 11: Pluggable NER + relation pattern extraction (HeuristicNER with stopword filtering, PatternRelationExtractor)
 - [x] Phase 12: Performance & robustness (context cancellation, SQLite HNSW mirroring, entity extraction heuristics)
 - [x] Phase 20 (partial): Real embedding providers — OpenAI, Cohere, Ollama HTTP providers with retry/backoff; `embedder.Pipeline` failover + `CachingEmbedder`; pure-Go ONNX runtime (`embedder/onnx/`) with `embedder.OnnxEmbedder` for local sentence-transformer inference (no CGO, no network)
-- [x] Phase 21 (partial): Document loaders — `loader.TextLoader`, `MarkdownLoader` (heading sections), `CSVLoader` (column mapping), `JSONLoader` (nested paths), `DirectoryLoader` (recursive, per-extension dispatch)
+- [x] Phase 21: Document ingestion — `loader` (text, markdown, CSV, JSON, directory, HTML, PDF, DOCX), `connector` (web, git, S3 with self-contained SigV4, GitHub, database), and `ingest` (pipeline, dedup, validation, progress, batch, incremental)
 
 ## Roadmap
 
