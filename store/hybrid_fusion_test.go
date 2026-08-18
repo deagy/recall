@@ -179,7 +179,7 @@ func TestMemoryStore_SearchHybrid_DeletedChunkNotReturned(t *testing.T) {
 
 	// The target is a strong BM25 hit; delete it and verify hybrid search
 	// no longer resurrects it through the keyword side.
-	require.NoError(t, s.DeleteChunk("doc-target::chunk-0"))
+	require.NoError(t, s.DeleteChunk(context.Background(), "doc-target::chunk-0"))
 
 	results, err := s.SearchHybrid(context.Background(), keywordOnlyQuery, index.SearchOptions{TopK: 10, BM25Weight: 1.0})
 	require.NoError(t, err)
@@ -259,7 +259,7 @@ func TestMemoryStore_DeleteDocumentPrunesKeywordIndex(t *testing.T) {
 	require.NotEmpty(t, idx.SearchBM25(keywordOnlyQuery),
 		"keyword index must contain the target before deletion")
 
-	require.NoError(t, s.DeleteDocument("doc-target"))
+	require.NoError(t, s.DeleteDocument(context.Background(), "doc-target"))
 	assert.Empty(t, idx.SearchBM25(keywordOnlyQuery),
 		"DeleteDocument must prune the keyword index")
 
@@ -278,7 +278,7 @@ func TestMemoryStore_DeleteChunkPrunesKeywordIndex(t *testing.T) {
 	idx := s.indexes["test"]
 	require.NotEmpty(t, idx.SearchBM25(keywordOnlyQuery))
 
-	require.NoError(t, s.DeleteChunk("doc-target::chunk-0"))
+	require.NoError(t, s.DeleteChunk(context.Background(), "doc-target::chunk-0"))
 	assert.Empty(t, idx.SearchBM25(keywordOnlyQuery),
 		"DeleteChunk must prune the keyword index")
 }

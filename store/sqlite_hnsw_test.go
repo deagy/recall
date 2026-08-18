@@ -58,7 +58,7 @@ func TestSQLiteStore_DeleteChunk_HNSWMirrorPruned(t *testing.T) {
 		require.NoError(t, s.Upload(ctx, doc, hnswDocContent(i)))
 	}
 
-	require.NoError(t, s.DeleteChunk("doc-1::chunk-0"))
+	require.NoError(t, s.DeleteChunk(ctx, "doc-1::chunk-0"))
 	assert.Equal(t, index.HNSWThreshold+2, s.Count(), "deleted chunk should not be counted")
 	_, ok := s.GetChunk("doc-1::chunk-0")
 	assert.False(t, ok, "deleted chunk should not be retrievable")
@@ -82,7 +82,7 @@ func TestSQLiteStore_DeleteDocument_HNSWMirrorPruned(t *testing.T) {
 		require.NoError(t, s.Upload(ctx, doc, hnswDocContent(i)))
 	}
 
-	require.NoError(t, s.DeleteDocument("doc-2"))
+	require.NoError(t, s.DeleteDocument(ctx, "doc-2"))
 	assert.Equal(t, index.HNSWThreshold+2, s.Count(), "deleted document chunk should not be counted")
 
 	results, err := s.Search(ctx, hnswDocContent(2), index.SearchOptions{TopK: 10})

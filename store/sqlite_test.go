@@ -58,7 +58,7 @@ func TestSQLiteStore_DeleteChunk(t *testing.T) {
 	doc := core.NewDocument("doc1", "Test", "test.txt")
 	require.NoError(t, s.Upload(ctx, doc, "Delete me please and remove this document from the store completely."), "upload should not fail")
 
-	require.NoError(t, s.DeleteChunk("doc1::chunk-0"), "delete should not fail")
+	require.NoError(t, s.DeleteChunk(ctx, "doc1::chunk-0"), "delete should not fail")
 
 	_, ok := s.GetChunk("doc1::chunk-0")
 	assert.False(t, ok, "expected chunk to be deleted")
@@ -71,7 +71,7 @@ func TestSQLiteStore_DeleteDocument(t *testing.T) {
 	doc := core.NewDocument("doc1", "Test", "test.txt")
 	require.NoError(t, s.Upload(ctx, doc, "Remove this entire document and all its chunks from the database permanently."), "upload should not fail")
 
-	require.NoError(t, s.DeleteDocument("doc1"), "delete doc should not fail")
+	require.NoError(t, s.DeleteDocument(ctx, "doc1"), "delete doc should not fail")
 
 	_, ok := s.GetChunk("doc1::chunk-0")
 	assert.False(t, ok, "expected all chunks to be deleted")
@@ -156,14 +156,14 @@ func TestSQLiteStore_GetChunk_NonExistent(t *testing.T) {
 func TestSQLiteStore_DeleteChunk_NonExistent(t *testing.T) {
 	s := newTestSQLiteStore(t)
 
-	err := s.DeleteChunk("nonexistent")
+	err := s.DeleteChunk(context.Background(), "nonexistent")
 	assert.NoError(t, err, "delete non-existent chunk should not fail")
 }
 
 func TestSQLiteStore_DeleteDocument_NonExistent(t *testing.T) {
 	s := newTestSQLiteStore(t)
 
-	err := s.DeleteDocument("nonexistent")
+	err := s.DeleteDocument(context.Background(), "nonexistent")
 	assert.NoError(t, err, "delete non-existent document should not fail")
 }
 
@@ -277,7 +277,7 @@ func TestSQLiteStore_DeleteChunk_AfterUpload(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, results, "expected results before delete")
 
-	require.NoError(t, s.DeleteChunk(results[0].Chunk.ID), "delete should not fail")
+	require.NoError(t, s.DeleteChunk(ctx, results[0].Chunk.ID), "delete should not fail")
 
 	_, ok := s.GetChunk(results[0].Chunk.ID)
 	assert.False(t, ok, "expected chunk to be deleted")
@@ -290,7 +290,7 @@ func TestSQLiteStore_DeleteDocument_AfterUpload(t *testing.T) {
 	doc := core.NewDocument("doc1", "Test", "test.txt")
 	require.NoError(t, s.Upload(ctx, doc, "Document content that will be deleted along with all its chunks."))
 
-	require.NoError(t, s.DeleteDocument("doc1"), "delete document should not fail")
+	require.NoError(t, s.DeleteDocument(ctx, "doc1"), "delete document should not fail")
 
 	assert.Equal(t, 0, s.Count(), "expected 0 chunks after document deletion")
 }
@@ -421,7 +421,7 @@ func TestSQLiteStore_Count_AfterDelete(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, results, "expected results before delete")
 
-	require.NoError(t, s.DeleteChunk(results[0].Chunk.ID))
+	require.NoError(t, s.DeleteChunk(ctx, results[0].Chunk.ID))
 
 	finalCount := s.Count()
 	assert.Less(t, finalCount, initialCount, "expected fewer chunks after delete")
@@ -532,7 +532,7 @@ func TestSQLiteStore_DeleteChunk_AfterGetChunk(t *testing.T) {
 	_, ok := s.GetChunk("doc1::chunk-0")
 	require.True(t, ok, "expected to find chunk before delete")
 
-	require.NoError(t, s.DeleteChunk("doc1::chunk-0"), "delete should not fail")
+	require.NoError(t, s.DeleteChunk(ctx, "doc1::chunk-0"), "delete should not fail")
 
 	_, ok = s.GetChunk("doc1::chunk-0")
 	assert.False(t, ok, "expected chunk to be deleted")
@@ -548,7 +548,7 @@ func TestSQLiteStore_DeleteDocument_AfterGetChunk(t *testing.T) {
 	_, ok := s.GetChunk("doc1::chunk-0")
 	require.True(t, ok, "expected to find chunk before delete")
 
-	require.NoError(t, s.DeleteDocument("doc1"), "delete document should not fail")
+	require.NoError(t, s.DeleteDocument(ctx, "doc1"), "delete document should not fail")
 
 	_, ok = s.GetChunk("doc1::chunk-0")
 	assert.False(t, ok, "expected chunk to be deleted after document deletion")

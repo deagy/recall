@@ -59,11 +59,11 @@ func (s *benchMockStore) GetChunk(id string) (*core.Chunk, bool) {
 	return nil, false
 }
 
-func (s *benchMockStore) DeleteChunk(id string) error {
+func (s *benchMockStore) DeleteChunk(ctx context.Context, id string) error {
 	return nil
 }
 
-func (s *benchMockStore) DeleteDocument(docID string) error {
+func (s *benchMockStore) DeleteDocument(ctx context.Context, docID string) error {
 	return nil
 }
 

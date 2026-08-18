@@ -32,13 +32,14 @@ func chunkWithEmbed(id, content string, v ...float32) *core.Chunk {
 
 // newTestDistributedStore builds a DistributedStore backed by n online
 // nodes with a fixed two-chunk mock chunker (see mockChunker in
-// distributed_test.go).
+// distributed_test.go). The chunks carry DocumentRef "doc-1" so document
+// deletion can be exercised (real chunkers set it from the document).
 func newTestDistributedStore(t *testing.T, nodes int) *DistributedStore {
 	t.Helper()
 	factory := func(cfg chunker.Config) chunker.Chunker {
 		return &mockChunker{chunks: []core.Chunk{
-			{ID: "chunk-00000001", Content: "Test chunk 1"},
-			{ID: "chunk-00000002", Content: "Test chunk 2"},
+			{ID: "chunk-00000001", Content: "Test chunk 1", DocumentRef: "doc-1"},
+			{ID: "chunk-00000002", Content: "Test chunk 2", DocumentRef: "doc-1"},
 		}}
 	}
 	ds := NewDistributedStore(nil, embedder.NewMockEmbedder(3), factory, "test-ns")
@@ -374,11 +375,86 @@ func TestDistributedStore_SearchHybrid_DeleteDocument_Getters(t *testing.T) {
 		t.Error("expected hybrid results after upload")
 	}
 
-	if err := ds.DeleteDocument("doc-1"); err != nil {
-		t.Errorf("DeleteDocument not implemented yet but must not error: %v", err)
+	// Note: Count() includes replica copies, so expect at least one copy per
+	// chunk (2 chunks × 2 nodes = 4 with the default primary-replica strategy).
+	if got := ds.Count(); got < 2 {
+		t.Errorf("expected at least 2 chunk copies before deletion, got %d", got)
 	}
+
+	// DeleteDocument must remove every copy of the document's chunks across
+	// all shards, including replicas.
+	if err := ds.DeleteDocument(context.Background(), "doc-1"); err != nil {
+		t.Fatalf("DeleteDocument must succeed for an uploaded document: %v", err)
+	}
+	if got := ds.Count(); got != 0 {
+		t.Errorf("expected 0 chunks after DeleteDocument, got %d", got)
+	}
+	if _, ok := ds.GetChunk("chunk-00000001"); ok {
+		t.Error("chunk must not be retrievable after DeleteDocument")
+	}
+	if err := ds.DeleteDocument(context.Background(), "doc-1"); err != core.ErrNotFound {
+		t.Errorf("second DeleteDocument must return core.ErrNotFound, got %v", err)
+	}
+	if err := ds.DeleteDocument(context.Background(), "doc-never-uploaded"); err != core.ErrNotFound {
+		t.Errorf("DeleteDocument of unknown document must return core.ErrNotFound, got %v", err)
+	}
+
 	if ds.GetShardManager() == nil || ds.GetReplicationManager() == nil || ds.GetCluster() == nil {
 		t.Error("manager accessors must return non-nil values")
+	}
+}
+
+// TestShardManager_DeleteDocument verifies selective, multi-shard document
+// deletion: only chunks whose DocumentRef matches are removed, the return
+// count is accurate, and unrelated documents survive.
+func TestShardManager_DeleteDocument(t *testing.T) {
+	_, sm := newTestShardCluster(2)
+	ctx := context.Background()
+
+	docs := map[string][]string{
+		"doc-a": {"aaaa-1", "aaaa-2"},
+		"doc-b": {"bbbb-1"},
+		"doc-c": {"cccc-1", "cccc-2", "cccc-3"},
+	}
+	for docID, ids := range docs {
+		for _, id := range ids {
+			chunk := chunkWithEmbed(id, "content of "+id, 1, 0, 0)
+			chunk.DocumentRef = docID
+			if err := sm.StoreChunk(ctx, chunk); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if got := sm.Count(); got != 6 {
+		t.Fatalf("expected 6 chunks seeded, got %d", got)
+	}
+
+	deleted, err := sm.DeleteDocument(ctx, "doc-b")
+	if err != nil {
+		t.Fatalf("DeleteDocument: %v", err)
+	}
+	if deleted != 1 {
+		t.Errorf("expected 1 chunk deleted for doc-b, got %d", deleted)
+	}
+	if got := sm.Count(); got != 5 {
+		t.Errorf("expected 5 chunks after deletion, got %d", got)
+	}
+	if _, ok := sm.GetChunk(ctx, "bbbb-1"); ok {
+		t.Error("deleted chunk must not be retrievable")
+	}
+
+	deleted, err = sm.DeleteDocument(ctx, "doc-c")
+	if err != nil || deleted != 3 {
+		t.Errorf("expected 3 chunks deleted for doc-c, got %d (err=%v)", deleted, err)
+	}
+
+	// doc-a survives the unrelated deletions, then deletes cleanly, and a
+	// repeat deletion reports zero.
+	if deleted, err = sm.DeleteDocument(ctx, "doc-a"); err != nil || deleted != 2 {
+		t.Errorf("expected 2 chunks deleted for doc-a, got %d (err=%v)", deleted, err)
+	}
+	if deleted, err = sm.DeleteDocument(ctx, "doc-a"); err != nil || deleted != 0 {
+		t.Errorf("second deletion of doc-a must report 0, got %d (err=%v)", deleted, err)
 	}
 }
 

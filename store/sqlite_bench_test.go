@@ -74,7 +74,7 @@ func BenchmarkSQLiteStore_Delete(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		s.DeleteChunk("doc-1::chunk-0")
+		s.DeleteChunk(ctx, "doc-1::chunk-0")
 	}
 }
 

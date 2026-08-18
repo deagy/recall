@@ -39,10 +39,10 @@ type Store interface {
 	GetChunk(id string) (*core.Chunk, bool)
 
 	// DeleteChunk removes a chunk from the store.
-	DeleteChunk(id string) error
+	DeleteChunk(ctx context.Context, id string) error
 
 	// DeleteDocument removes all chunks belonging to a document.
-	DeleteDocument(docID string) error
+	DeleteDocument(ctx context.Context, docID string) error
 
 	// Count returns the total number of chunks across all namespaces.
 	Count() int

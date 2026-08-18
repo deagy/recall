@@ -239,6 +239,38 @@ func (sm *ShardManager) DeleteChunk(ctx context.Context, chunkID string) error {
 	return nil
 }
 
+// DeleteDocument removes all chunks whose DocumentRef matches docID from
+// every active shard. It returns the number of chunks removed; zero means
+// the document was not present in any shard.
+func (sm *ShardManager) DeleteDocument(ctx context.Context, docID string) (int, error) {
+	deleted := 0
+	for _, shard := range sm.GetActiveShards() {
+		if ctx.Err() != nil {
+			return deleted, ctx.Err()
+		}
+		shard.mu.Lock()
+		for id, chunk := range shard.Data {
+			if chunk.DocumentRef == docID {
+				delete(shard.Data, id)
+				deleted++
+			}
+		}
+		shard.mu.Unlock()
+	}
+	return deleted, nil
+}
+
+// Count returns the total number of chunks across all active shards.
+func (sm *ShardManager) Count() int {
+	count := 0
+	for _, shard := range sm.GetActiveShards() {
+		shard.mu.RLock()
+		count += len(shard.Data)
+		shard.mu.RUnlock()
+	}
+	return count
+}
+
 // getShardIDForChunk generates a consistent shard ID for a chunk using consistent hashing.
 func (sm *ShardManager) getShardIDForChunk(chunkID string) string {
 	// Use the first 8 characters of the chunk ID as the shard key

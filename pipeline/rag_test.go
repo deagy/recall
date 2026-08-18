@@ -236,11 +236,11 @@ func (s *mockStore) GetChunk(id string) (*core.Chunk, bool) {
 	return nil, false
 }
 
-func (s *mockStore) DeleteChunk(id string) error {
+func (s *mockStore) DeleteChunk(ctx context.Context, id string) error {
 	return nil
 }
 
-func (s *mockStore) DeleteDocument(docID string) error {
+func (s *mockStore) DeleteDocument(ctx context.Context, docID string) error {
 	return nil
 }
 

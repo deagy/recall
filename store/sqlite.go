@@ -519,17 +519,17 @@ func (s *SQLiteStore) GetChunk(id string) (*core.Chunk, bool) {
 }
 
 // DeleteChunk removes a chunk from the store.
-func (s *SQLiteStore) DeleteChunk(id string) error {
+func (s *SQLiteStore) DeleteChunk(ctx context.Context, id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	tx, err := s.db.BeginTx(context.Background(), nil)
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
 	}
 	defer tx.Rollback()
 
-	_, err = tx.ExecContext(context.Background(),
+	_, err = tx.ExecContext(ctx,
 		`DELETE FROM chunks WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("deleting chunk: %w", err)
@@ -545,17 +545,17 @@ func (s *SQLiteStore) DeleteChunk(id string) error {
 }
 
 // DeleteDocument removes all chunks belonging to a document.
-func (s *SQLiteStore) DeleteDocument(docID string) error {
+func (s *SQLiteStore) DeleteDocument(ctx context.Context, docID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	tx, err := s.db.BeginTx(context.Background(), nil)
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
 	}
 	defer tx.Rollback()
 
-	_, err = tx.ExecContext(context.Background(),
+	_, err = tx.ExecContext(ctx,
 		`DELETE FROM chunks WHERE document_ref = ?`, docID)
 	if err != nil {
 		return fmt.Errorf("deleting document chunks: %w", err)

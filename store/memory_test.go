@@ -109,12 +109,12 @@ func TestMemoryStore_DeleteDocument(t *testing.T) {
 
 	require.Greater(t, s.Count(), 0, "expected chunks after upload")
 
-	err := s.DeleteDocument("doc1")
+	err := s.DeleteDocument(context.Background(), "doc1")
 	require.NoError(t, err, "DeleteDocument should not fail")
 
 	assert.Equal(t, 0, s.Count(), "expected 0 chunks after delete")
 
-	err = s.DeleteDocument("nonexistent")
+	err = s.DeleteDocument(context.Background(), "nonexistent")
 	assert.ErrorIs(t, err, core.ErrNotFound, "expected ErrNotFound for nonexistent doc")
 }
 
@@ -267,7 +267,7 @@ func TestMemoryStore_DeleteNonExistentChunk(t *testing.T) {
 	s := newTestStore(t)
 	defer s.Close()
 
-	err := s.DeleteChunk("nonexistent")
+	err := s.DeleteChunk(context.Background(), "nonexistent")
 	assert.ErrorIs(t, err, core.ErrNotFound, "expected ErrNotFound")
 }
 
@@ -275,7 +275,7 @@ func TestMemoryStore_DeleteDocumentNonExistent(t *testing.T) {
 	s := newTestStore(t)
 	defer s.Close()
 
-	err := s.DeleteDocument("nonexistent")
+	err := s.DeleteDocument(context.Background(), "nonexistent")
 	assert.ErrorIs(t, err, core.ErrNotFound, "expected ErrNotFound")
 }
 
@@ -398,7 +398,7 @@ func TestMemoryStore_DeleteChunk_AfterUpload(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, results, "expected results before delete")
 
-	err = s.DeleteChunk(results[0].Chunk.ID)
+	err = s.DeleteChunk(context.Background(), results[0].Chunk.ID)
 	assert.NoError(t, err, "delete should not fail")
 
 	_, ok := s.GetChunk(results[0].Chunk.ID)
@@ -411,7 +411,7 @@ func TestMemoryStore_DeleteDocument_AfterUpload(t *testing.T) {
 
 	uploadAndVerify(t, s, "doc1", "Document content that will be deleted along with all its chunks.")
 
-	err := s.DeleteDocument("doc1")
+	err := s.DeleteDocument(context.Background(), "doc1")
 	assert.NoError(t, err, "delete document should not fail")
 
 	assert.Equal(t, 0, s.Count(), "expected 0 chunks after document deletion")
@@ -506,7 +506,7 @@ func TestMemoryStore_Count_AfterDelete(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, results, "expected results before delete")
 
-	err = s.DeleteChunk(results[0].Chunk.ID)
+	err = s.DeleteChunk(context.Background(), results[0].Chunk.ID)
 	assert.NoError(t, err)
 
 	finalCount := s.Count()
@@ -815,7 +815,7 @@ func BenchmarkMemoryStore_Delete(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		s.DeleteChunk("doc-1::chunk-0")
+		s.DeleteChunk(context.Background(), "doc-1::chunk-0")
 	}
 }
 

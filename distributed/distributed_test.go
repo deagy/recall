@@ -607,7 +607,7 @@ func TestDistributedStore_DeleteChunk(t *testing.T) {
 	ds.AddNode(node)
 	ds.Upload(context.Background(), &core.Document{ID: "doc-1"}, "Test content")
 
-	err := ds.DeleteChunk("chunk-00000001")
+	err := ds.DeleteChunk(context.Background(), "chunk-00000001")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -263,11 +263,11 @@ func (s *MemoryStore) GetChunk(id string) (*core.Chunk, bool) {
 }
 
 // DeleteChunk removes a chunk from the store.
-func (s *MemoryStore) DeleteChunk(id string) error {
+func (s *MemoryStore) DeleteChunk(ctx context.Context, id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, idx := range s.indexes {
-		if err := idx.Delete(context.Background(), id); err == nil {
+		if err := idx.Delete(ctx, id); err == nil {
 			return nil
 		}
 	}
@@ -275,7 +275,7 @@ func (s *MemoryStore) DeleteChunk(id string) error {
 }
 
 // DeleteDocument removes all chunks belonging to a document.
-func (s *MemoryStore) DeleteDocument(docID string) error {
+func (s *MemoryStore) DeleteDocument(ctx context.Context, docID string) error {
 	s.mu.Lock()
 	chunkIDs, ok := s.docChunks[docID]
 	if !ok {
@@ -292,7 +292,7 @@ func (s *MemoryStore) DeleteDocument(docID string) error {
 	firstErr := error(nil)
 	for id := range chunkIDs {
 		for _, idx := range indexes {
-			if err := idx.Delete(context.Background(), id); err != nil && firstErr == nil {
+			if err := idx.Delete(ctx, id); err != nil && firstErr == nil {
 				firstErr = err
 			}
 		}

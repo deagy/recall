@@ -144,26 +144,27 @@ func (ds *DistributedStore) GetChunk(id string) (*core.Chunk, bool) {
 }
 
 // DeleteChunk removes a chunk from the store.
-func (ds *DistributedStore) DeleteChunk(id string) error {
-	return ds.shardManager.DeleteChunk(context.Background(), id)
+func (ds *DistributedStore) DeleteChunk(ctx context.Context, id string) error {
+	return ds.shardManager.DeleteChunk(ctx, id)
 }
 
-// DeleteDocument removes all chunks belonging to a document.
-func (ds *DistributedStore) DeleteDocument(docID string) error {
-	// TODO: Implement document deletion across shards
+// DeleteDocument removes all chunks belonging to a document across every
+// active shard. It returns core.ErrNotFound if the document has no chunks
+// in any shard.
+func (ds *DistributedStore) DeleteDocument(ctx context.Context, docID string) error {
+	deleted, err := ds.shardManager.DeleteDocument(ctx, docID)
+	if err != nil {
+		return err
+	}
+	if deleted == 0 {
+		return core.ErrNotFound
+	}
 	return nil
 }
 
 // Count returns the total number of chunks across all namespaces.
 func (ds *DistributedStore) Count() int {
-	activeShards := ds.shardManager.GetActiveShards()
-	count := 0
-	for _, shard := range activeShards {
-		shard.mu.RLock()
-		count += len(shard.Data)
-		shard.mu.RUnlock()
-	}
-	return count
+	return ds.shardManager.Count()
 }
 
 // Namespaces returns the list of namespaces in the store.
