@@ -114,8 +114,8 @@ silently dropped — hybrid degrades to vector search with BM25 re-ranking.
   `store`/`chunker`/`core` coverage numbers.
 - **`HNSW` RNG** — `rand.New(rand.NewSource(42))` (`index/hnsw.go:315`): deprecated
   constructor (Go ≥1.20) and a fixed seed gives every index identical layer assignments.
-- **`HNSW.Search`** implements its own min-heap with O(n) scan + full `sort.Slice` per
-  iteration; use `container/heap`.
+- ✅ **`HNSW.Search`** implemented its own min-heap with O(n) scan + full `sort.Slice` per
+  iteration — replaced with `container/heap` via the fix-3 `searchLayer` rewrite.
 - **`GetChunk` returns internal `*core.Chunk` pointers** (both stores) — callers can mutate
   index state. Consider returning copies.
 - **`llm` package (40.2% coverage)** — `openai.go`/`ollama.go` HTTP paths thinly tested
@@ -165,8 +165,15 @@ silently dropped — hybrid degrades to vector search with BM25 re-ranking.
    `:memory:` + pooled connections gave each connection a separate in-memory DB
    ("no such table: chunks" under concurrency); `NewSQLiteStore` now uses
    `db.SetMaxOpenConns(1)` — a second, previously unlisted defect caught by the new test.
-3. **Real HNSW construction** (bug 3) — ef-construction neighbor search in `Add`; add recall
-   assertion test vs brute force.
+3. ✅ **Real HNSW construction** (bug 3) — *Done 2026-07-18:* rewrote `HNSW.Add` with a
+   proper `searchLayer` ef-construction beam search (`container/heap`, also closes the
+   "hand-rolled min-heap" medium item), greedy descent between layers, M/M0-capped
+   bidirectional links with a reserved slot for the new back-link (pure top-M trimming
+   evicted fresh nodes and left them unreachable), and correct entry-point handling for
+   newly opened levels. `Search` reuses the same beam. Regression tests:
+   `index/hnsw_recall_test.go` — `TestHNSW_Recall_Clustered` (recall@10 ≥ 0.8 vs brute
+   force + layer-0 degree sanity) and `TestHNSW_Recall_IncrementalInserts`; both fail
+   against the legacy single-neighbor graph.
 4. **Sorted hash ring + proper removal** (bug 5) — sort `hashRing` after mutation, prune on
    `removeVirtualNodes`, fix wrap-around.
 5. **Hybrid fusion** (bug 7) — include BM25-only results via index lookup instead of skipping.

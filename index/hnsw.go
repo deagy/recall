@@ -3,6 +3,7 @@
 package index
 
 import (
+	"container/heap"
 	"context"
 	"math"
 	"math/rand"
@@ -362,97 +363,75 @@ func (h *HNSW) Add(id string, embedding []float32) {
 
 	idx := len(h.nodes)
 	node := &hnswNode{
-		id:          id,
-		embedding:   embedding,
-		connections: make([][]int, 0),
+		id:        id,
+		embedding: embedding,
+		layer:     h.layerHeight(),
 	}
-	node.layer = h.layerHeight()
-
-	for len(h.entries) <= node.layer {
-		h.entries = append(h.entries, 0)
+	node.connections = make([][]int, node.layer+1)
+	for l := 0; l <= node.layer; l++ {
+		node.connections[l] = make([]int, 0)
 	}
+	h.nodes = append(h.nodes, node)
+	h.nodeIdx[id] = idx
 
-	if len(h.nodes) == 0 {
-		node.connections = make([][]int, node.layer+1)
-		for l := 0; l <= node.layer; l++ {
-			node.connections[l] = make([]int, 0)
-		}
+	if len(h.nodes) == 1 {
+		// The first node is the entry point of the graph.
 		h.entries = make([]int, node.layer+1)
 		for l := 0; l <= node.layer; l++ {
 			h.entries[l] = idx
 		}
-		h.nodes = append(h.nodes, node)
-		h.nodeIdx[id] = idx
 		return
 	}
 
+	maxLayer := len(h.entries) - 1
+
+	// Find the starting entry on the topmost layer the node occupies.
+	entry := -1
+	if node.layer <= maxLayer {
+		entry = h.entries[maxLayer]
+		for l := maxLayer; l > node.layer; l-- {
+			entry = h.greedyClosest(entry, l, embedding)
+		}
+	}
+
+	// Connect the node on each of its layers, top to bottom.
 	for l := node.layer; l >= 0; l-- {
+		if entry == -1 {
+			if l >= len(h.entries) {
+				// Brand-new level above the old top: this node is the only
+				// occupant, so there are no peers to link to.
+				continue
+			}
+			entry = h.entries[l]
+		}
+
 		maxConn := h.cfg.M
 		if l == 0 {
 			maxConn = h.cfg.M0
 		}
 
-		var candidates []int
-		if l < len(h.entries) && h.entries[l] >= 0 {
-			candidates = append(candidates, h.entries[l])
+		candidates := h.searchLayer(entry, l, embedding, h.cfg.EfConstruction)
+		if len(candidates) == 0 {
+			continue
 		}
 
-		type scored struct {
-			idx   int
-			score float64
+		n := len(candidates)
+		if n > maxConn {
+			n = maxConn
 		}
-		var candidateScores []scored
-		for _, cIdx := range candidates {
-			score := cosineSim(embedding, h.nodes[cIdx].embedding)
-			candidateScores = append(candidateScores, scored{cIdx, score})
-		}
-		sort.Slice(candidateScores, func(i, j int) bool {
-			return candidateScores[i].score > candidateScores[j].score
-		})
-
-		ef := h.cfg.EfConstruction
-		if ef > len(candidateScores) {
-			ef = len(candidateScores)
-		}
-		candidateScores = candidateScores[:ef]
-
-		var neighbors []int
-		for _, cs := range candidateScores {
-			if cs.idx != idx {
-				neighbors = append(neighbors, cs.idx)
-			}
-			if len(neighbors) >= maxConn {
-				break
-			}
+		for i := 0; i < n; i++ {
+			node.connections[l] = append(node.connections[l], candidates[i].idx)
+			h.linkBack(candidates[i].idx, idx, l, maxConn)
 		}
 
-		if l >= len(node.connections) {
-			newConn := make([][]int, l+1)
-			copy(newConn, node.connections)
-			node.connections = newConn
-		}
-		for _, nIdx := range neighbors {
-			node.connections[l] = append(node.connections[l], nIdx)
-			if l >= len(h.nodes[nIdx].connections) {
-				newConn := make([][]int, l+1)
-				copy(newConn, h.nodes[nIdx].connections)
-				h.nodes[nIdx].connections = newConn
-			}
-			h.nodes[nIdx].connections[l] = append(h.nodes[nIdx].connections[l], idx)
-		}
-
-		if l < len(h.entries) {
-			entryScore := cosineSim(embedding, h.nodes[h.entries[l]].embedding)
-			nodeScore := cosineSim(embedding, node.embedding)
-			if nodeScore > entryScore {
-				h.entries[l] = idx
-			}
-		}
+		// The closest candidate seeds the search on the next layer down.
+		entry = candidates[0].idx
 	}
 
-	node.connections = node.connections[:node.layer+1]
-	h.nodes = append(h.nodes, node)
-	h.nodeIdx[id] = idx
+	// Publish the node as entry point for any levels it opened.
+	for len(h.entries) <= node.layer {
+		h.entries = append(h.entries, idx)
+	}
 }
 
 // Contains reports whether a node with the given ID is present in the graph.
@@ -461,6 +440,150 @@ func (h *HNSW) Contains(id string) bool {
 	defer h.mu.RUnlock()
 	_, ok := h.nodeIdx[id]
 	return ok
+}
+
+// linkBack adds idx to the neighbor's connections on layer, keeping the list
+// at most maxConn entries. When the list is full one slot is reserved for the
+// new link (so fresh nodes stay reachable) and the remaining maxConn-1 slots
+// go to the closest old neighbors. Callers must hold h.mu.
+func (h *HNSW) linkBack(neighbor, idx, layer, maxConn int) {
+	n := h.nodes[neighbor]
+	if layer >= len(n.connections) {
+		return
+	}
+	conn := n.connections[layer]
+	for _, c := range conn {
+		if c == idx {
+			return
+		}
+	}
+	if len(conn) < maxConn {
+		n.connections[layer] = append(conn, idx)
+		return
+	}
+
+	scored := make([]hnswCand, 0, len(conn))
+	for _, c := range conn {
+		if c == neighbor {
+			continue
+		}
+		scored = append(scored, hnswCand{c, cosineSim(n.embedding, h.nodes[c].embedding)})
+	}
+	sort.Slice(scored, func(i, j int) bool { return scored[i].score > scored[j].score })
+	trimmed := make([]int, 0, maxConn)
+	for i := 0; i < len(scored) && i < maxConn-1; i++ {
+		trimmed = append(trimmed, scored[i].idx)
+	}
+	trimmed = append(trimmed, idx)
+	n.connections[layer] = trimmed
+}
+
+// greedyClosest follows layer l links from start, returning the index of the
+// node closest to query. Callers must hold h.mu.
+func (h *HNSW) greedyClosest(start, layer int, query []float32) int {
+	best := start
+	if layer >= len(h.nodes[best].connections) {
+		return best
+	}
+	bestScore := cosineSim(query, h.nodes[best].embedding)
+	improved := true
+	for improved {
+		improved = false
+		for _, nIdx := range h.nodes[best].connections[layer] {
+			score := cosineSim(query, h.nodes[nIdx].embedding)
+			if score > bestScore {
+				bestScore = score
+				best = nIdx
+				improved = true
+			}
+		}
+	}
+	return best
+}
+
+// hnswCand is a node index paired with its cosine similarity score.
+type hnswCand struct {
+	idx   int
+	score float64
+}
+
+// candMaxHeap is a max-heap of hnswCand so the best candidate pops first.
+type candMaxHeap []hnswCand
+
+func (q candMaxHeap) Len() int           { return len(q) }
+func (q candMaxHeap) Less(i, j int) bool { return q[i].score > q[j].score }
+func (q candMaxHeap) Swap(i, j int)      { q[i], q[j] = q[j], q[i] }
+
+func (q *candMaxHeap) Push(x any) { *q = append(*q, x.(hnswCand)) }
+
+func (q *candMaxHeap) Pop() any {
+	old := *q
+	n := len(old)
+	x := old[n-1]
+	*q = old[:n-1]
+	return x
+}
+
+// searchLayer beam-searches layer l starting from entry, returning the up to
+// ef closest nodes sorted by descending similarity. Callers must hold h.mu.
+func (h *HNSW) searchLayer(entry, layer int, query []float32, ef int) []hnswCand {
+	if entry < 0 || layer < 0 {
+		return nil
+	}
+
+	visited := make(map[int]bool)
+	var candidates candMaxHeap
+	results := make([]hnswCand, 0, ef)
+
+	entryScore := cosineSim(query, h.nodes[entry].embedding)
+	visited[entry] = true
+	candidates = append(candidates, hnswCand{entry, entryScore})
+	results = append(results, hnswCand{entry, entryScore})
+	worst := entryScore
+	heap.Init(&candidates)
+
+	for len(candidates) > 0 {
+		curr := heap.Pop(&candidates).(hnswCand)
+		if len(results) >= ef && curr.score < worst {
+			break
+		}
+		if layer >= len(h.nodes[curr.idx].connections) {
+			continue
+		}
+		for _, nIdx := range h.nodes[curr.idx].connections[layer] {
+			if visited[nIdx] {
+				continue
+			}
+			visited[nIdx] = true
+			score := cosineSim(query, h.nodes[nIdx].embedding)
+			if len(results) < ef {
+				heap.Push(&candidates, hnswCand{nIdx, score})
+				results = append(results, hnswCand{nIdx, score})
+				if score < worst {
+					worst = score
+				}
+			} else if score > worst {
+				// Replace the current worst with the better candidate.
+				heap.Push(&candidates, hnswCand{nIdx, score})
+				worstIdx := 0
+				for i := range results {
+					if results[i].score < results[worstIdx].score {
+						worstIdx = i
+					}
+				}
+				results[worstIdx] = hnswCand{nIdx, score}
+				worst = results[0].score
+				for i := 1; i < len(results); i++ {
+					if results[i].score < worst {
+						worst = results[i].score
+					}
+				}
+			}
+		}
+	}
+
+	sort.Slice(results, func(i, j int) bool { return results[i].score > results[j].score })
+	return results
 }
 
 // Search finds the nearest neighbors to the query embedding.
@@ -475,67 +598,12 @@ func (h *HNSW) Search(query []float32, ef int) []string {
 		ef = h.cfg.EfSearch
 	}
 
-	current := h.entries[len(h.entries)-1]
-
-	for l := len(h.entries) - 2; l >= 0; l-- {
-		bestIdx := h.entries[l]
-		bestScore := cosineSim(query, h.nodes[bestIdx].embedding)
-		changed := true
-		for changed {
-			changed = false
-			for _, neighbor := range h.nodes[bestIdx].connections[l] {
-				score := cosineSim(query, h.nodes[neighbor].embedding)
-				if score > bestScore {
-					bestScore = score
-					bestIdx = neighbor
-					changed = true
-				}
-			}
-		}
-		current = bestIdx
+	entry := h.entries[len(h.entries)-1]
+	for l := len(h.entries) - 1; l > 0; l-- {
+		entry = h.greedyClosest(entry, l, query)
 	}
 
-	type candidate struct {
-		idx   int
-		score float64
-	}
-
-	visited := make(map[int]bool)
-	heap := make([]candidate, 0)
-	heap = append(heap, candidate{current, cosineSim(query, h.nodes[current].embedding)})
-	visited[current] = true
-
-	var results []candidate
-
-	for len(heap) > 0 {
-		minIdx := 0
-		for i := 1; i < len(heap); i++ {
-			if heap[i].score < heap[minIdx].score {
-				minIdx = i
-			}
-		}
-
-		curr := heap[minIdx]
-		heap = append(heap[:minIdx], heap[minIdx+1:]...)
-
-		if len(results) >= ef && curr.score < results[len(results)-1].score {
-			break
-		}
-
-		results = append(results, curr)
-		sort.Slice(results, func(i, j int) bool {
-			return results[i].score > results[j].score
-		})
-
-		for _, neighbor := range h.nodes[curr.idx].connections[0] {
-			if !visited[neighbor] {
-				visited[neighbor] = true
-				score := cosineSim(query, h.nodes[neighbor].embedding)
-				heap = append(heap, candidate{neighbor, score})
-			}
-		}
-	}
-
+	results := h.searchLayer(entry, 0, query, ef)
 	ids := make([]string, len(results))
 	for i, r := range results {
 		ids[i] = h.nodes[r.idx].id
