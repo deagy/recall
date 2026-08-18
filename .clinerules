@@ -6,7 +6,7 @@ Recall is a Go library for building Retrieval-Augmented Generation (RAG) applica
 ## Coding Standards
 
 ### Go Conventions
-- **Module path**: `github.com/deagy/sdk/recall`
+- **Module path**: `github.com/deagy/recall`
 - **Go version**: 1.26.5
 - **Style**: Follow `gofmt` and `go vet` strictly
 - **Errors**: Always check and return errors; never ignore them

@@ -13,23 +13,21 @@ _Reviewed: 2026-07-18 · Scope: full codebase (~25.7k LOC, 18 packages)_
 | Coverage ≥80% target | ❌ 6 packages below (see table) |
 | CI (`.github/workflows/go.yml`) | ✅ fixed 2026-08-17 — vet, gofmt gate, `-race` tests, smoke bench |
 
-**Coverage vs. the >80% target:**
+**Coverage vs. the >80% target** (*re-measured 2026-08-17 after the mock removal — `store`
+jumped 49.9% → 85.7%, `core` → 100%):
 
 | Gap | Package | Coverage |
 |---|---|---|
 | −40 | `llm` | 40.2% |
-| −30 | `store` | 49.9% |
-| −24 | `distributed` | 55.8% |
-| −12 | `core` | 67.7% |
-| −9 | `index` | 70.9% |
+| −23 | `distributed` | 57.5% |
+| −5 | `index` | 75.5% |
 | −5 | `reasoning` | 74.9% |
-| −2 | `chunker` | 78.1% |
 
 ---
 
 ## 🔴 Critical bugs (correctness)
 
-### ~~1. HNSW silently drops chunks added after activation~~ — *Fixed 2026-07-18 (see action plan #1):*
+### ~~1. HNSW silently drops chunks added after activation~~ — *Fixed 2026-08-17 (see action plan #1):*
 `index/hnsw.go:53-70` (`MemoryIndex.Add`/`AddBatch`), `store/sqlite.go:171-173` (`SQLiteStore.Upload`)
 `buildHNSW()` only runs when `!hnswEnabled`. Once HNSW activates past 1,000 chunks, every
 subsequent `Add`/`Upload` goes into `m.chunks` and BM25 but **never into the HNSW graph**, so
@@ -151,10 +149,13 @@ contribution a constant. A dead, identically-buggy `fuseScores` helper was remov
 - **~~13 unformatted files~~ — *Fixed 2026-08-17:*** `cache/` (5), `chunker/` (2), `distributed/` (4), `graph/` (2) —
   `gofmt -s -w .` fixed all (12 at sweep time; `distributed/cluster.go` had already been
   reformatted by the fix-4 ring rewrite).
-- **Doc drift**: `.clinerules` says module `github.com/deagy/sdk/recall`; actual go.mod is
-  `github.com/deagy/recall`. README "100K+ chunks" claim needs the HNSW fixes to be credible.
-- **`coverage.out`** committed at repo root — build artifact; gitignore it.
-- Some commit messages contain literal `\n` strings (e.g. `a2a731e`) — cosmetic.
+- **~~Doc drift~~ — *Fixed 2026-08-17:*** `.clinerules` module path corrected to
+  `github.com/deagy/recall`; README "100K+ chunks" HNSW claim softened to match the
+  actual activation-threshold behavior.
+- **~~`coverage.out`~~ committed at repo root** — *Fixed 2026-08-17:* untracked and added
+  to a new `.gitignore` (with `*.test`, `*.out`).
+- Some commit messages contain literal `\n` strings (e.g. `a2a731e`) — cosmetic,
+  left as-is (rewriting history is out of scope).
 
 ---
 

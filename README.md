@@ -10,7 +10,7 @@ A Go library for building Retrieval-Augmented Generation (RAG) applications. Rec
 - **Metadata Filtering** — Term, range, date range, and custom filters
 - **Hybrid Search** — BM25 keyword + vector score fusion with WeightedFusion or RRF
 - **SQLite Persistence** — Persistent storage with `modernc.org/sqlite` (pure Go, no CGO)
-- **HNSW ANN Index** — Approximate nearest neighbor search for 100K+ chunks
+- **HNSW ANN Index** — Approximate nearest neighbor search for large collections (automatic brute-force below the activation threshold)
 - **RAG Pipeline** — Context assembly, prompt templating, token management
 - **Knowledge Graph** — Entity/relation extraction, graph traversal (BFS/DFS), transitive closure, path finding, common-neighbor inference
 - **Multi-hop Reasoning** — Pluggable inference rules (transitive, symmetric, anti-symmetric), depth-limited path exploration, confidence propagation, natural language query → graph reasoning
