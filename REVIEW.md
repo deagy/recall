@@ -29,14 +29,14 @@ _Reviewed: 2026-07-18 · Scope: full codebase (~25.7k LOC, 18 packages)_
 
 ## 🔴 Critical bugs (correctness)
 
-### 1. HNSW silently drops chunks added after activation
+### ~~1. HNSW silently drops chunks added after activation~~ — *Fixed 2026-07-18 (see action plan #1):*
 `index/hnsw.go:53-70` (`MemoryIndex.Add`/`AddBatch`), `store/sqlite.go:171-173` (`SQLiteStore.Upload`)
 `buildHNSW()` only runs when `!hnswEnabled`. Once HNSW activates past 1,000 chunks, every
 subsequent `Add`/`Upload` goes into `m.chunks` and BM25 but **never into the HNSW graph**, so
 new documents become invisible to vector search — the realistic case for a growing corpus.
 **Fix:** in `Add`/`AddBatch`, when `hnswEnabled`, also call `m.hnsw.Add(id, embedding)`.
 
-### 2. Deleted chunks are still returned from HNSW search
+### ~~2. Deleted chunks are still returned from HNSW search~~ — *Fixed 2026-07-18 (see action plan #1):*
 `index/hnsw.go:105-124` (`Delete`), `212-224` (`searchHNSW`)
 In HNSW mode `Delete` only sets a tombstone (rebuild fires only at >20% tombstone ratio),
 but `searchHNSW` never checks `m.deleted[id]` and `Delete` doesn't remove the chunk from
@@ -45,7 +45,7 @@ still see them too.
 **Fix:** filter `m.deleted[id]` in `searchHNSW` and `GetChunk`; consider removing from
 `m.chunks` immediately.
 
-### 3. HNSW graph construction is not real HNSW
+### ~~3. HNSW graph construction is not real HNSW~~ — *Fixed 2026-07-18 (see action plan #3):*
 `index/hnsw.go:374-436` (`HNSW.Add`)
 During construction, `candidates` is seeded with a **single entry node** and never expanded —
 there is no greedy/beam search for ef-construction neighbors. Each node gets at most 1
@@ -55,7 +55,7 @@ they are small and never assert a recall threshold against brute force.
 **Fix:** implement proper ef-construction neighbor search in `HNSW.Add`; add a recall
 regression test (e.g. top-100 recall ≥ 0.9 vs brute force on 10k random vectors).
 
-### 4. `SQLiteStore` has data races
+### ~~4. `SQLiteStore` has data races~~ — *Fixed 2026-07-18 (see action plan #2):*
 `store/sqlite.go`
 `s.mu` is declared but `Upload` writes `s.chunks` (~line 167) and `s.hnsw` (line 172 via
 `buildHNSW`) **without the lock**, while `Search`/`searchHNSW` read both lock-free (only
@@ -64,7 +64,7 @@ Concurrent `Upload` + `Search` is a genuine race.
 **Fix:** guard all `s.chunks`/`s.hnsw` access with `s.mu`; add a concurrent
 Upload/Search test (run with `-race` in CI).
 
-### 5. Consistent-hash ring is broken
+### ~~5. Consistent-hash ring is broken~~ — *Fixed 2026-07-18 (see action plan #4):*
 `distributed/cluster.go`
 - `hashRing` is an append-only slice that is **never sorted**; the ring walks in
   `GetReplicaNodes`/`GetNodeForChunk` do `if vHash >= hash`, which only works on a sorted ring.
@@ -174,8 +174,18 @@ silently dropped — hybrid degrades to vector search with BM25 re-ranking.
    `index/hnsw_recall_test.go` — `TestHNSW_Recall_Clustered` (recall@10 ≥ 0.8 vs brute
    force + layer-0 degree sanity) and `TestHNSW_Recall_IncrementalInserts`; both fail
    against the legacy single-neighbor graph.
-4. **Sorted hash ring + proper removal** (bug 5) — sort `hashRing` after mutation, prune on
-   `removeVirtualNodes`, fix wrap-around.
+4. ✅ **Sorted hash ring + proper removal** (bug 5) — *Done 2026-07-18:* `hashRing`
+   is now a sorted invariant maintained with `sort.Search` insert/delete
+   (`O(ring)` shifts per vnode, fine at 150 vnodes × few nodes); `removeVirtualNodes`
+   prunes the slice as well as the map; `GetReplicaNodes` walks the ring with
+   wrap-around via `ringIndex` and returns up to `min(RF, node count)` distinct
+   nodes with the primary first; `GetNodeForChunk` reuses the same walk; `Rebalance`
+   is a real idempotent rebuild (self-heals a drifted ring, honors `ctx`).
+   Regression tests: `distributed/cluster_ring_test.go` — determinism across
+   insertion order, ring sorted/consistent after churn, RF satisfied with
+   wrap-around (primary == `GetNodeForChunk`), RF capping at 1 node and nil on an
+   empty cluster, Rebalance idempotency + self-healing + cancellation, and key
+   distribution sanity. All fail against the legacy unsorted append-only ring.
 5. **Hybrid fusion** (bug 7) — include BM25-only results via index lookup instead of skipping.
 6. **Housekeeping** — `gofmt -s -w .`, fix CI bench step, move mocks to test files,
    de-duplicate BM25 + prune on delete, raise `store`/`llm`/`distributed` coverage,
