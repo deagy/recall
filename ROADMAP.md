@@ -264,7 +264,7 @@ there.
 
 ## Phase 25: Resilience & Reliability
 
-**Status: 🔄 In Progress** — 25.1 LLM, 25.2 Store, and 25.3 Distributed Resilience complete; 25.4 (Context Management) pending.
+**Status: ✅ Complete (2026-08-18)** — all four sub-phases implemented and tested (see checklist below).
 
 **Goal:** Add production reliability features.
 
@@ -288,10 +288,10 @@ there.
 - [x] `distributed.Consensus` — leader election for writes (`Consensus` deterministic leader among online nodes with a monotonically increasing `Term`)
 
 ### 25.4 Context Management
-- [ ] `pipeline.SmartContextWindow` — priority-based chunk inclusion
-- [ ] `pipeline.ContextCompression` — summarize long contexts
-- [ ] `pipeline.CitationTracking` — track which chunk contributed what
-- [ ] `pipeline.HallucinationDetection` — verify claims against sources
+- [x] `pipeline.SmartContextWindow` — priority-based chunk inclusion (`SmartContextWindow.Select`: highest-score chunks first within the token budget; opt-in via `RAGPipeline.WithSmartContext`)
+- [x] `pipeline.ContextCompression` — summarize long contexts (`ContextCompressor` + pluggable `Summarizer` + deterministic `ExtractiveSummarizer`)
+- [x] `pipeline.CitationTracking` — track which chunk contributed what (`TrackCitations`/`RenderCitations`; opt-in via `RAGPipeline.WithCitations` populating `RAGResponse.Citations`)
+- [x] `pipeline.HallucinationDetection` — verify claims against sources (`HallucinationDetector.Check`/`HallucinationRate`, lexical claim-support)
 
 **Estimated Effort:** 3–4 weeks
 **Priority:** Medium

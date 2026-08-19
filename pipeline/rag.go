@@ -23,6 +23,10 @@ type RAGResponse struct {
 
 	// Tokens is the approximate token count of the context.
 	Tokens int
+
+	// Citations are the ranked references to source chunks. Populated only
+	// when the pipeline is configured with WithCitations.
+	Citations []Citation
 }
 
 // RAGPipeline is the main RAG pipeline that retrieves and assembles context.
@@ -35,6 +39,8 @@ type RAGPipeline struct {
 	reranker         Reranker
 	coarseTopK       int
 	rerankTopK       int
+	citations        bool
+	smartContext     bool
 }
 
 // NewRAGPipeline creates a new RAG pipeline with the given store and template.
@@ -72,6 +78,21 @@ func (p *RAGPipeline) WithMaxTokens(tokens int) *RAGPipeline {
 	if tokens > 0 {
 		p.maxContextTokens = tokens
 	}
+	return p
+}
+
+// WithCitations enables citation tracking: the response's Citations field is
+// populated with ranked references to the source chunks.
+func (p *RAGPipeline) WithCitations() *RAGPipeline {
+	p.citations = true
+	return p
+}
+
+// WithSmartContext enables priority-based context selection: chunks are
+// included by relevance score within the token budget (via SmartContextWindow)
+// rather than strictly in retrieval order.
+func (p *RAGPipeline) WithSmartContext() *RAGPipeline {
+	p.smartContext = true
 	return p
 }
 
@@ -139,14 +160,31 @@ func (p *RAGPipeline) retrieve(ctx context.Context, question string, hybrid bool
 // final, ordered result list.
 func (p *RAGPipeline) buildResponse(question string, results []index.SearchResult) *RAGResponse {
 	cw := NewContextWindow(p.maxContextTokens)
-	for _, r := range results {
-		cw.AddChunk(*r.Chunk)
+	if p.smartContext {
+		candidates := make([]ScoredChunk, 0, len(results))
+		for _, r := range results {
+			if r.Chunk == nil {
+				continue
+			}
+			candidates = append(candidates, ScoredChunk{Chunk: *r.Chunk, Score: r.Score})
+		}
+		for _, chunk := range NewSmartContextWindow(p.maxContextTokens).Select(candidates) {
+			cw.AddChunk(chunk)
+		}
+	} else {
+		for _, r := range results {
+			cw.AddChunk(*r.Chunk)
+		}
 	}
 
 	resp := &RAGResponse{
 		Context: cw.String(),
 		Sources: results,
 		Tokens:  cw.Tokens(),
+	}
+
+	if p.citations {
+		resp.Citations = TrackCitations(results)
 	}
 
 	resp.Answer = p.template.Render(map[string]interface{}{
