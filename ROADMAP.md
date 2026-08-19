@@ -198,12 +198,13 @@ there.
 **Goal:** Add production-grade observability.
 
 ### 23.1 Metrics
-- [ ] `metrics.StoreMetrics` — search latency, throughput, error rates
-- [ ] `metrics.EmbeddingMetrics` — embedding latency, dimension stats
-- [ ] `metrics.CacheMetrics` — hit/miss ratio, eviction count
-- [ ] `metrics.GraphMetrics` — traversal depth, inference counts
-- [ ] Export to Prometheus format (`/metrics` endpoint)
-- [ ] Structured logging with correlation IDs
+- [x] `metrics.StoreMetrics` — search latency (p50/p95/p99), throughput, error rates
+- [x] `metrics.EmbeddingMetrics` — embedding latency, dimension stats
+- [x] `metrics.CacheMetrics` — hit/miss ratio, eviction count
+- [x] `metrics.GraphMetrics` — traversal depth, inference counts
+- [x] Export to Prometheus format (`Registry.HTTPHandler()` for a `/metrics` endpoint)
+- [x] Structured logging with correlation IDs (`metrics.Logger`)
+- [x] `metrics.InstrumentedStore` — drop-in `store.Store` wrapper that records store metrics + structured logs
 
 ### 23.2 Tracing
 - [ ] OpenTelemetry integration
