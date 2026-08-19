@@ -220,10 +220,11 @@ there.
 - [x] Expose diagnostics via endpoint: `store.HealthHandler` and `distributed.HealthHandler` serve `/healthz` (200/503) and `/diagnostics` (JSON)
 
 ### 23.4 Query Analytics
-- [ ] `analytics.QueryLog` — log queries with latency and results
-- [ ] `analytics.PopularQueries` — trending query detection
-- [ ] `analytics.DropOffDetection` — queries with no good results
-- [ ] Export to configurable sink (file, HTTP, message queue)
+- [x] `analytics.QueryLog` — bounded, thread-safe log of queries with latency and results (ring buffer)
+- [x] `analytics.PopularQueries` — trending query detection (frequency + avg latency), case/whitespace-normalized
+- [x] `analytics.DropOff` — queries with no good results (errored, zero results, or top score below threshold)
+- [x] Export to configurable sinks: `Sink` interface + `FileSink` (NDJSON) and `HTTPSink` (POST to a collector/queue bridge); a message-queue sink plugs in via the same interface
+- [x] `analytics.InstrumentedAnalyticsStore` — drop-in `store.Store` wrapper that records query records
 
 **Estimated Effort:** 3–4 weeks
 **Priority:** Medium

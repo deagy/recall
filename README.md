@@ -479,6 +479,7 @@ recall/
 ├── loader/         # Document loaders (text, markdown, CSV, JSON, HTML, PDF, DOCX, directory)
 ├── connector/      # Source connectors (web, git, S3+SigV4, GitHub, database)
 ├── ingest/         # Ingestion pipeline (dedup, validation, progress, batch, incremental)
+├── llm/            # LLM backends (pluggable) + resilience decorators (retry, breaker, rate limit, fallback)
 ├── cache/          # Intelligent caching: LRU, TTL, query/embedding/graph caching, multi-level
 ├── index/          # Storage index: Memory (brute-force + HNSW), filters
 ├── store/          # High-level store: Memory + SQLite backends, GraphStore
@@ -490,6 +491,9 @@ recall/
 ├── reranker/       # Fine ranking: cross-encoder (ONNX), sparse (BM25), LLM-judge, ensemble, pointwise LTR
 ├── query/          # Query engine (planned)
 ├── distributed/    # Distributed storage: consistent hashing, sharding, scatter-gather search, replication
+├── metrics/        # Observability: counters/gauges/histograms, Prometheus export, structured logging, store instrumentation
+├── tracing/        # OTel-compatible tracing: spans, W3C traceparent, span processors, store instrumentation
+├── analytics/      # Query analytics: query log, popular queries, drop-off detection, sinks
 └── example/        # Usage examples
 ```
 
@@ -536,6 +540,7 @@ recall/
 - [x] Phase 23.1: Metrics & Observability foundation — new stdlib-only `metrics` package: thread-safe `Registry` with `Counter`/`Gauge`/`Histogram` (fixed buckets + bounded reservoir for p50/p95/p99), Prometheus text export (`Registry.RenderPrometheus` + `Registry.HTTPHandler()` for a `/metrics` endpoint), structured `Logger` (JSON or key=value) with correlation-ID propagation, ready-made bundles (`StoreMetrics`, `EmbeddingMetrics`, `CacheMetrics`, `GraphMetrics`), and `InstrumentedStore` — a drop-in `store.Store` wrapper that records search/upload latency, throughput, error rate, and store size
 - [x] Phase 23.2: Tracing — new stdlib-only, OpenTelemetry-compatible `tracing` package: 128-bit trace / 64-bit span IDs, spans with kinds/attributes/events/status and context propagation, W3C `traceparent` inject/parse + `StartRemoteSpan` for cross-node correlation, pluggable `SpanProcessor`s (`InMemoryProcessor` grouped by trace, `ConsoleProcessor`), and `InstrumentedTracingStore` — a drop-in `store.Store` wrapper that records the upload → search → retrieve path as parent/child spans with metadata tags. The OTel SDK is intentionally not bundled (zero-dependency/zero-CGO); `SpanProcessor` is the bridge point
 - [x] Phase 23.3: Health & Diagnostics — `store.HealthCheck()` (connectivity + size + namespaces + SQLite structural integrity → `store.HealthReport`), `distributed.ShardDistribution()` (per-node shard stats), and HTTP diagnostics endpoints: `store.HealthHandler` and `distributed.HealthHandler` serve `/healthz` (200 when healthy, 503 otherwise) and `/diagnostics` (JSON snapshot)
+- [x] Phase 23.4: Query Analytics — new stdlib-only `analytics` package: bounded, thread-safe `QueryLog` (ring buffer) recording query latency/results, `PopularQueries` (trending detection), `DropOff` (queries with no good results), pluggable `Sink`s (`FileSink` NDJSON, `HTTPSink` POST; message-queue via the same interface), and `InstrumentedAnalyticsStore` — a drop-in `store.Store` wrapper. **Phase 23 (Observability & Monitoring) is now complete.**
 
 ## Roadmap
 
