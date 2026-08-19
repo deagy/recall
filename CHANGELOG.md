@@ -10,12 +10,17 @@ note in [docs/MIGRATION.md](./docs/MIGRATION.md).
 
 ## [Unreleased]
 
-### Added — Phase 32: Project Hygiene & Documentation (2026-08-19)
+## [0.1.0] — 2026-08-19
+
+The initial release contains everything developed through Phase 32 of the
+[roadmap](./ROADMAP.md). Summary by area:
+
+### Added — Phase 32: Project Hygiene & Documentation
 
 - `golangci-lint` configuration (`.golangci.yml`, schema v2) with the default
   linters plus gosec, misspell, revive, and unconvert; every exclusion is
   narrow and documented inline. All real findings fixed in code; targeted
-  `//nolint:gosec` on four analyzed false positives. **Repo-wide lint is now
+  `//nolint:gosec` on four analyzed false positives. **Repo-wide lint is
   0 issues** (previous baseline: 587).
 - CI: `.github/workflows/go.yml` — lint (pinned golangci-lint),
   build & test (vet, gofmt, `go test -race`, overall ≥80% coverage
@@ -33,7 +38,6 @@ note in [docs/MIGRATION.md](./docs/MIGRATION.md).
   client), plus `example/README.md`.
 - Guides: `docs/BENCHMARKS.md` (benchmark comparison) and
   `docs/MIGRATION.md` (version upgrades).
-- `CHANGELOG.md` established.
 
 ### Changed
 
@@ -48,10 +52,14 @@ note in [docs/MIGRATION.md](./docs/MIGRATION.md).
 - Doc comments reworded to canonical staticcheck forms in `cache`,
   `pipeline`, `query`, `distributed`, and `testutil`.
 
-## [0.1.0] — first release (pending)
+### Fixed
 
-The initial release contains everything developed through Phase 29 of the
-[roadmap](./ROADMAP.md). Summary by area:
+- CI license check: `go-licenses` misclassifies the BSD-3-Clause LICENSE
+  of `modernc.org/mathutil` (transitive dependency of
+  `modernc.org/sqlite`); the license was manually verified and the
+  package is now explicitly excluded with a documented reason.
+- Release workflow: re-tagging a version now replaces the existing
+  GitHub release instead of failing on the duplicate tag name.
 
 ### Added — Core & Retrieval
 
