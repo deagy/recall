@@ -496,6 +496,7 @@ recall/
 ├── analytics/      # Query analytics: query log, popular queries, drop-off detection, sinks
 ├── feedback/       # Relevance feedback: Rocchio query expansion (vector + lexical), expand-and-retrieve
 ├── eval/           # Evaluation: Precision/Recall/MRR/NDCG@K, RAG answer quality, benchmark suite, reports
+├── hitl/           # Human-in-the-loop: review queue, annotations, active-learning (uncertainty) prioritization
 └── example/        # Usage examples
 ```
 
@@ -545,6 +546,7 @@ recall/
 - [x] Phase 23.4: Query Analytics — new stdlib-only `analytics` package: bounded, thread-safe `QueryLog` (ring buffer) recording query latency/results, `PopularQueries` (trending detection), `DropOff` (queries with no good results), pluggable `Sink`s (`FileSink` NDJSON, `HTTPSink` POST; message-queue via the same interface), and `InstrumentedAnalyticsStore` — a drop-in `store.Store` wrapper. **Phase 23 (Observability & Monitoring) is now complete.**
 - [x] Phase 24.1: Relevance Feedback — new stdlib-only `feedback` package: `Label`/`Feedback` + thread-safe `Collector` (a "training store" with `ToMetadata()` for persistence), the classic `Rocchio` query-expansion algorithm in both **vector** form (`Q' = αQ + β·mean(relevant) − γ·mean(irrelevant)`) and **lexical** form (expanded query string), and `RelevanceFeedback.ExpandAndRetrieve` (retrieve → mark relevant → Rocchio → re-search → boost relevant) using caller-side `VectorSearcher`/`ChunkGetter`/`Embedder` interfaces
 - [x] Phase 24.2: Evaluation Framework — new stdlib-only `eval` package: retrieval metrics (Precision@K, Recall@K, MRR, NDCG@K, graded or binary relevance), `RAGEval` answer quality (faithfulness/relevance/correctness) via a pluggable `Judge` (deterministic `OverlapJudge` included), `Dataset` (JSON load/save), `BenchmarkSuite` (`Run`/`RunWithAnswers` + `Compare` for baseline regression), and `Report` (JSON/Markdown)
+- [x] Phase 24.3: Human-in-the-Loop — new stdlib-only `hitl` package: thread-safe `ReviewQueue` (de-duplicated, highest-uncertainty-first, approve/reject lifecycle), `Annotation`/`AnnotationStore` (relevance/correction/feedback, indexed by chunk + ID), and `ActiveLearning` (least-confidence `UncertaintyFromScores`, top-1/top-2 `Margin`, and `Select` to enqueue the most uncertain candidates for review)
 
 ## Roadmap
 

@@ -249,9 +249,9 @@ there.
 - [x] `eval.Report` — aggregate report with JSON/Markdown output; `SaveJSON`/`LoadReport` enable golden-file regression checks in CI
 
 ### 24.3 Human-in-the-Loop
-- [ ] `hitl.ReviewQueue` — queue chunks for human review
-- [ ] `hitl.Annotation` — store human annotations
-- [ ] `hitl.ActiveLearning` — prioritize uncertain chunks for review
+- [x] `hitl.ReviewQueue` — thread-safe, de-duplicated priority queue of chunks awaiting human review (highest uncertainty first), with approve/reject lifecycle
+- [x] `hitl.Annotation` + `hitl.AnnotationStore` — human annotations (relevance/correction/feedback) stored by value, indexed by chunk and ID, with most-recent-relevance lookup
+- [x] `hitl.ActiveLearning` — uncertainty prioritization: `UncertaintyFromScores` (least-confidence), `Margin` (top-1/top-2 gap), and `Select` (enqueue top-N uncertain candidates, skipping already-reviewed)
 - [ ] Web UI for annotation (optional, Phase 30)
 
 ### 24.4 Automated Testing
