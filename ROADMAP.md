@@ -446,34 +446,36 @@ there.
 
 ---
 
-## Phase 29: CLI Tool
+## Phase 29: CLI Tool ✅
 
 **Goal:** Provide a command-line interface for common operations.
 
+**Status:** Complete — `cmd/recall` ships every command below in two modes: local (in-process against the configured store) and server (HTTP client of a running recall-server via `--server`/`cli.url`), backed by the shared `app` assembly package and the typed `client` REST client.
+
 ### 29.1 Core Commands
-- [ ] `recall upload` — upload documents to a store
-- [ ] `recall search` — perform vector search
-- [ ] `recall hybrid-search` — perform hybrid search
-- [ ] `recall rag` — run RAG query
-- [ ] `recall graph` — query the knowledge graph
-- [ ] `recall reason` — run multi-hop reasoning
+- [x] `recall upload` — upload documents to a store (files + recursive directories; text, markdown, CSV, JSON, HTML, PDF, DOCX)
+- [x] `recall search` — perform vector search
+- [x] `recall hybrid-search` — perform hybrid search (`--bm25-weight`)
+- [x] `recall rag` — run RAG query (context assembly + rendered prompt with citations)
+- [x] `recall graph` — query the knowledge graph (entity by ID/label with neighbors + relations, `graph list`)
+- [x] `recall reason` — run multi-hop reasoning (natural-language query or `--from`/`--to` path exploration)
 
 ### 29.2 Management Commands
-- [ ] `recall store info` — display store statistics
-- [ ] `recall store migrate` — run schema migrations
-- [ ] `recall store backup` — create a backup
-- [ ] `recall store restore` — restore from backup
-- [ ] `recall cluster status` — check distributed cluster health
+- [x] `recall store info` — display store statistics (health, chunks, namespaces, schema version, integrity)
+- [x] `recall store migrate` — run schema migrations (versioned `-- recall-migration:` SQL files, transactional, idempotent)
+- [x] `recall store backup` — create a backup (online `VACUUM INTO`)
+- [x] `recall store restore` — restore from backup (atomic temp-file + rename, `--force` guard)
+- [x] `recall cluster status` — check distributed cluster health (probes each node's /diagnostics; exit 1 on down/unreachable nodes)
 
 ### 29.3 Evaluation Commands
-- [ ] `recall eval` — run evaluation benchmarks
-- [ ] `recall eval compare` — compare two configurations
+- [x] `recall eval` — run evaluation benchmarks (Precision/Recall/MRR/NDCG@K over an eval dataset, `--save` report)
+- [x] `recall eval compare` — compare two configurations (tolerance-gated regression check, exit 2 on regression — CI gate)
 
 ### 29.4 Implementation
-- [ ] Use `github.com/spf13/cobra` for CLI framework
-- [ ] Subcommands with flags and positional arguments
-- [ ] Output formatting (table, JSON, YAML)
-- [ ] Configuration file support (~/.recall.yaml)
+- [x] Use `github.com/spf13/cobra` for CLI framework
+- [x] Subcommands with flags and positional arguments
+- [x] Output formatting (table, JSON, YAML via `-o/--output` or `cli.output`)
+- [x] Configuration file support (~/.recall.yaml, .yml, .json; `--config`; `RECALL__SECTION__KEY` env overrides; `cli` config section with url/api_key/timeout/output/cluster_nodes)
 
 **Estimated Effort:** 2–3 weeks
 **Priority:** Low-Medium
@@ -598,4 +600,4 @@ Priority 1 (Foundation)          Priority 2 (Production)        Priority 3 (Grow
 ### Quick Wins (can be done in parallel, ~2 weeks each):
 1. ~~**Test coverage hardening** (Phase 19)~~ — ✅ done 2026-08-18 (all 14 packages ≥80%)
 2. **Project hygiene** (Phase 32) — improves developer experience
-3. **CLI tool** (Phase 29) — improves usability
+3. ~~**CLI tool** (Phase 29)~~ — ✅ done 2026-08-19 (`cmd/recall`: local + server modes, all data/store/cluster/eval commands)

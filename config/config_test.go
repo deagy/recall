@@ -265,6 +265,95 @@ func TestApplyEnv_CustomPrefix(t *testing.T) {
 	}
 }
 
+func TestCLI_Defaults(t *testing.T) {
+	c := &Config{}
+	c.WithDefaults()
+	if c.CLI.Timeout != Duration(30*time.Second) {
+		t.Errorf("cli timeout default = %v, want 30s", c.CLI.Timeout)
+	}
+	if c.CLI.Output != OutputTable {
+		t.Errorf("cli output default = %q, want %q", c.CLI.Output, OutputTable)
+	}
+}
+
+func TestLoad_CLISection(t *testing.T) {
+	const yaml = `
+server:
+  host: 127.0.0.1
+store:
+  backend: memory
+cli:
+  url: http://recall.example:8080
+  api_key: secret
+  timeout: 5s
+  output: json
+  cluster_nodes: ["http://n1:9000", "http://n2:9000"]
+`
+	path := writeTemp(t, "recall.yaml", yaml)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.CLI.URL != "http://recall.example:8080" {
+		t.Errorf("cli.url = %q", cfg.CLI.URL)
+	}
+	if cfg.CLI.APIKey != "secret" {
+		t.Errorf("cli.api_key = %q", cfg.CLI.APIKey)
+	}
+	if cfg.CLI.Timeout != Duration(5*time.Second) {
+		t.Errorf("cli.timeout = %v, want 5s", cfg.CLI.Timeout)
+	}
+	if cfg.CLI.Output != OutputJSON {
+		t.Errorf("cli.output = %q, want json", cfg.CLI.Output)
+	}
+	if len(cfg.CLI.ClusterNodes) != 2 || cfg.CLI.ClusterNodes[0] != "http://n1:9000" {
+		t.Errorf("cli.cluster_nodes = %v", cfg.CLI.ClusterNodes)
+	}
+}
+
+func TestApplyEnv_CLI(t *testing.T) {
+	c := &Config{}
+	c.WithDefaults()
+	t.Setenv("RECALL__CLI__URL", "http://env:9090")
+	t.Setenv("RECALL__CLI__API_KEY", "envkey")
+	t.Setenv("RECALL__CLI__TIMEOUT", "7s")
+	t.Setenv("RECALL__CLI__OUTPUT", "yaml")
+	t.Setenv("RECALL__CLI__CLUSTER_NODES", "http://a:1, http://b:2")
+	c.ApplyEnv("")
+	if c.CLI.URL != "http://env:9090" {
+		t.Errorf("cli.url env override not applied: %q", c.CLI.URL)
+	}
+	if c.CLI.APIKey != "envkey" {
+		t.Errorf("cli.api_key env override not applied: %q", c.CLI.APIKey)
+	}
+	if c.CLI.Timeout != Duration(7*time.Second) {
+		t.Errorf("cli.timeout env override not applied: %v", c.CLI.Timeout)
+	}
+	if c.CLI.Output != OutputYAML {
+		t.Errorf("cli.output env override not applied: %q", c.CLI.Output)
+	}
+	if len(c.CLI.ClusterNodes) != 2 || c.CLI.ClusterNodes[1] != "http://b:2" {
+		t.Errorf("cli.cluster_nodes env override not applied: %v", c.CLI.ClusterNodes)
+	}
+}
+
+func TestValidate_CLIProblems(t *testing.T) {
+	c := &Config{}
+	c.WithDefaults()
+	c.CLI.URL = "://not-a-url"
+	c.CLI.Output = "xml"
+	c.CLI.Timeout = Duration(-time.Second)
+	err := c.Validate()
+	if err == nil {
+		t.Fatal("expected validation errors for cli section")
+	}
+	for _, want := range []string{"cli.url", "cli.output", "cli.timeout"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("validation error missing %q: %v", want, err)
+		}
+	}
+}
+
 func TestSave_Roundtrip(t *testing.T) {
 	orig, err := Load(writeTemp(t, "in.json", jsonConfig))
 	if err != nil {

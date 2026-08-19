@@ -30,6 +30,7 @@ A Go library for building Retrieval-Augmented Generation (RAG) applications. Rec
 - **Reranking** — `reranker` package improves top-k precision with a two-stage coarse→fine stage: `CrossEncoderReranker` (pure-Go ONNX cross-encoder), `SparseReranker` (BM25 re-scoring), `LLMReranker` (LLM-as-judge over an injected `llm.Backend`), `EnsembleReranker` (fuses several rerankers via `fuse`), `LTRanker` (pointwise learning-to-rank with `Fit`), `AdaptiveLTRanker` (feedback-driven adaptation with auto-refit at a configurable threshold), and `Experiment` (A/B testing: NDCG@K, MRR@K, Precision@K, win rate, Welch t-test). Wire any of them into a pipeline with `RAGPipeline.WithReranker(...)` plus `WithCoarseTopK`/`WithRerankTopK`; rerank scores and ranks are attributed on each `index.SearchResult`
 - **REST API Service** — `api` package exposes Recall over HTTP using only the standard library: `POST /upload`, `GET /search`, `POST /hybrid-search`, `POST /rag`, `GET /graph/{entity}`, `POST /graph/reason`, plus `/healthz`/`/readyz`/`/diagnostics` and an embedded OpenAPI 3.0 spec at `GET /openapi.json`; optional authentication via static API keys (`X-API-Key`/Bearer) or HS256 JWTs (stdlib-verified), CORS, and body-size limits; runnable standalone via `cmd/recall-server` with graceful shutdown
 - **Configuration & Deployment** — `config` package loads JSON/YAML configs with env-var overrides (`RECALL__SECTION__KEY`), validation, and mtime-poll hot reload (`config.Watcher`); `deploy/` ships a multi-stage pure-Go (CGO_ENABLED=0) distroless Dockerfile, docker-compose, and Kubernetes manifests (Deployment + Service + HPA with health probes)
+- **Command-Line Interface (CLI)** — `cmd/recall` is a cobra-based toolkit that runs in two modes: **local** (in-process against the configured SQLite/memory store) and **server** (HTTP client of a running recall-server via `--server`/`cli.url`, backed by the typed `client` package). Commands: `upload` (files + recursive directories), `search`, `hybrid-search`, `rag`, `graph` (+ `graph list`), `reason` (NL query or `--from`/`--to` paths), `store info|migrate|backup|restore` (online VACUUM INTO backup, atomic restore, versioned SQL migrations), `cluster status` (node /diagnostics probes with exit-code health gating), and `eval` (+ `eval compare` regression gate, exit 2 on regressions). Output as table, JSON, or YAML (`-o`); configuration via `--config`, `$HOME/.recall.yaml` (.yml/.json), and `RECALL__SECTION__KEY` env overrides
 - **Zero CGO** — Pure Go standard library only for core; SQLite via pure Go driver. The zero-CGO constraint applies to library code and its dependencies — a test build with `CGO_ENABLED=1` is explicitly allowed where a C compiler is present, since Go's race detector (`go test -race`) links the toolchain's own C runtime (tsan) and does not make the library itself cgo-dependent
 
 ## Quick Start
@@ -97,6 +98,60 @@ func main() {
     }
 }
 ```
+
+## Command-Line Interface (CLI)
+
+`cmd/recall` is the Recall command-line toolkit. Build it with:
+
+```bash
+go build -o recall ./cmd/recall
+```
+
+Commands run in two modes:
+
+- **local** (default) — in-process against the store from your configuration
+  (`store.backend: sqlite` + `store.path` for persistence, or an in-memory store)
+- **server** — when a server URL is given (`--server` flag or `cli.url` in the
+  config), the data commands act as an HTTP client for a running recall-server
+
+```bash
+# Ingest files or directories (text, markdown, CSV, JSON, HTML, PDF, DOCX)
+recall upload ./docs
+
+# Vector / hybrid search
+recall search "how does the index work" --top-k 5
+recall hybrid-search "indexing" --bm25-weight 0.7
+
+# RAG: retrieve, assemble context, render the prompt (with citations)
+recall rag "Why is chunking important?" --top-k 5
+
+# Knowledge graph + multi-hop reasoning
+recall graph "Alice"
+recall reason --from alice --to berlin --max-hops 4
+
+# Store maintenance (SQLite backend)
+recall store info
+recall store migrate migrations.sql
+recall store backup recall.db.backup
+recall store restore recall.db.backup --force
+
+# Distributed cluster health (exit 1 when a node is down)
+recall cluster status --node http://node1:9000 --node http://node2:9000
+
+# Retrieval evaluation (Precision/Recall/MRR/NDCG@K) + CI regression gate
+recall eval dataset.json --save report.json
+recall eval compare baseline.json report.json   # exit 2 on regression
+
+# Talk to a running recall-server instead of the local store
+recall --server http://localhost:8080 search "indexing" -o json
+```
+
+Every command renders `table` (default), `json`, or `yaml` via `-o/--output`.
+Configuration resolves in order: `--config` flag, `$HOME/.recall.yaml`
+(also `.yml`/`.json`), built-in defaults; `RECALL__SECTION__KEY` environment
+variables (e.g. `RECALL__CLI__API_KEY`) override file values. See `deploy/config/`
+for example config files and the `cli` section (url, api_key, timeout, output,
+cluster_nodes).
 
 ## Semantic Chunking
 
@@ -502,7 +557,9 @@ recall/
 ├── testutil/       # Test helpers: fixture store, scripted LLM/embedder mocks, golden files, benchmark harness
 ├── api/            # REST API service: stdlib HTTP server, auth (API keys + HS256 JWT), embedded OpenAPI spec
 ├── config/         # Service configuration: JSON/YAML load, env overrides, validation, hot-reload watcher
-├── cmd/            # recall-server: standalone service entrypoint (config-driven, graceful shutdown, health probe)
+├── app/            # Service assembly: config → embedder/store/pipeline/graph/reasoner/API server (shared by server & CLI)
+├── client/         # Typed HTTP client for the recall-server REST API (CLI server-mode transport)
+├── cmd/            # recall-server: standalone service entrypoint; recall: CLI (upload/search/rag/graph/reason/store/cluster/eval)
 └── example/        # Usage examples
 ```
 
@@ -622,6 +679,7 @@ process. The notes below apply when you run the `recall-server` service
 - [x] Phase 27.3: Configuration — new `config` package: JSON/YAML file loading (by extension) with defaults and multi-problem `Validate()`, environment overrides via `RECALL__SECTION__KEY` (double-underscore nesting; malformed values ignored), and `config.Watcher` hot reload (mtime/size polling, validated reload through a callback, invalid edits skipped and reported via `LastError`). **Phase 27.2 (gRPC) is intentionally deferred** — it requires protobuf codegen and the `grpc` dependency, and the roadmap marks it as future work
 - [x] Phase 27.4: Deployment — `deploy/Dockerfile` (multi-stage, `CGO_ENABLED=0` pure-Go build on distroless/nonroot, in-image `HEALTHCHECK` via the binary's `-health-probe` mode), `deploy/docker-compose.yml` (single node: mounted config + SQLite volume + env overrides, with a documented multi-node template), and `deploy/kubernetes/recall.yaml` (ConfigMap, Secret, Deployment with `/readyz`/`/healthz` probes and resource limits, Service, HPA). Example configs in `deploy/config/` are regression-tested by the `config` package
 - [x] Phase 28.1 (partial): Security — **namespace-scoped API keys** (`api.ScopedAPIKeyAuth` + `auth.scoped_keys`): per-key namespace restrictions enforced on every data endpoint (uploads `403` outside scope; search/hybrid/RAG retrieval restricted via a `core.MetadataKeyNamespace` filter; graph entities, relations, and reasoning paths filtered with out-of-scope entities reported as 404 — fail closed). Stores now stamp `core.MetadataKeyNamespace` on every chunk at upload, and `pipeline.RAGPipeline` gained race-safe `Clone()`/`WithSearchFilters()` for request-scoped retrieval. While adding scoping, two pre-existing bugs were fixed: memory-store hybrid search bypassed metadata filters for keyword-only (BM25) matches, and the SQLite store corrupted typed metadata values (`core.String` & co.) after a DB round-trip (legacy rows now unwrap transparently). The remainder of Phase 28 (RBAC, row-level security, at-rest/in-transit encryption, audit logging, vault, compliance) is **deferred** until a multi-tenant hosted service is needed — see the [Security Guidance](#security-guidance) section for the operational guidance that covers library and single-tenant service use in the meantime
+- [x] Phase 29: CLI Tool — new `cmd/recall` cobra binary with two execution modes: **local** (in-process against the configured SQLite/memory store) and **server** (typed HTTP client of a running recall-server via `--server` or `cli.url`). Data commands: `upload` (files + recursive directories through `loader`), `search`, `hybrid-search`, `rag` (assembled context + rendered prompt with citations), `graph <entity>`/`graph list`, `reason` (NL reasoning or `--from`/`--to` path exploration). Management commands: `store info` (health, namespaces, schema version, integrity), `store migrate` (versioned `-- recall-migration:` SQL files, transactional + idempotent), `store backup` (online `VACUUM INTO`), `store restore` (atomic temp-file + rename with `--force` guard), `cluster status` (probes node `/diagnostics`, exit 1 when a node is down/unreachable). Evaluation commands: `eval` (Precision/Recall/MRR/NDCG@K over an `eval.Dataset`, `--save` JSON report) and `eval compare` (tolerance-gated regression check, exit 2 on regression — a CI gate). All commands render table/JSON/YAML (`-o`); configuration resolves `--config` → `$HOME/.recall.yaml` (.yml/.json) → defaults with `RECALL__SECTION__KEY` env overrides, and gains a `cli` section (url, api_key, timeout, output, cluster_nodes). Service assembly moved into the new `app` package so recall-server and the CLI always wire components the same way; the typed REST client lives in the new `client` package
 
 ## Roadmap
 
@@ -639,7 +697,7 @@ The full development roadmap is documented in [ROADMAP.md](./ROADMAP.md). Curren
 | | 24 | Feedback loop & evaluation framework (NDCG, relevance feedback) | |
 | **4 — Ecosystem** | 27 | REST API & service layer (Docker, K8s) | ~12 weeks |
 | | 28 | Security (auth, RBAC, encryption, audit logging) | |
-| | 29 | CLI tool (`recall search`, `recall upload`, etc.) | |
+| | 29 | ~~CLI tool~~ ✅ (`recall search`, `recall upload`, etc.) | |
 | | 30–32 | Web UI, SDK wrappers (Python/TypeScript), project hygiene | |
 
 **Total estimated effort: ~36–38 weeks for full roadmap.**
@@ -647,7 +705,7 @@ The full development roadmap is documented in [ROADMAP.md](./ROADMAP.md). Curren
 ### Quick Wins
 1. **Test coverage hardening** — `llm/` at 40.2%, `store/` at 49.9% need immediate attention
 2. **Project hygiene** — CHANGELOG, CONTRIBUTING, CI/CD, golangci-lint
-3. **CLI tool** — improves developer ergonomics
+3. ~~**CLI tool**~~ — ✅ done (`cmd/recall`, see [Command-Line Interface](#command-line-interface-cli))
 
 ### Current Coverage Gaps
 

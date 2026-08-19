@@ -1,13 +1,15 @@
-// Package config provides declarative configuration for running Recall as
-// a service. Configurations load from JSON or YAML files, can be
-// overridden by environment variables (RECALL__SECTION__KEY), are
-// validated before use, and can be watched for changes (hot reload).
+// Package config provides declarative configuration for running Recall as a
+// service or through the command-line client. Configurations load from JSON
+// or YAML files, can be overridden by environment variables
+// (RECALL__SECTION__KEY), are validated before use, and can be watched for
+// changes (hot reload).
 package config
 
 import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -84,6 +86,10 @@ type Config struct {
 
 	// Auth configures API authentication.
 	Auth AuthConfig `json:"auth" yaml:"auth"`
+
+	// CLI configures the recall command-line client. The server ignores
+	// this section.
+	CLI CLIConfig `json:"cli" yaml:"cli"`
 }
 
 // ServerConfig configures the HTTP API server.
@@ -199,6 +205,39 @@ type ScopedKeyConfig struct {
 	Namespaces []string `json:"namespaces,omitempty" yaml:"namespaces,omitempty"`
 }
 
+// Output format identifiers for CLIConfig.Output.
+const (
+	OutputTable = "table"
+	OutputJSON  = "json"
+	OutputYAML  = "yaml"
+)
+
+// CLIConfig configures the recall command-line client. Only the `recall`
+// CLI consults this section; the API server ignores it.
+type CLIConfig struct {
+	// URL is the base URL of a running recall-server (e.g.
+	// "http://localhost:8080"). When empty, the CLI operates in-process on
+	// the local store defined in the Store section.
+	URL string `json:"url" yaml:"url"`
+
+	// APIKey authenticates requests to the server (sent as both Bearer and
+	// X-API-Key). Prefer the RECALL__CLI__API_KEY environment variable over
+	// storing keys in config files.
+	APIKey string `json:"api_key" yaml:"api_key"`
+
+	// Timeout bounds HTTP requests to the server. Defaults to 30s.
+	Timeout Duration `json:"timeout" yaml:"timeout"`
+
+	// Output is the default result format: "table", "json", or "yaml".
+	// Defaults to "table".
+	Output string `json:"output" yaml:"output"`
+
+	// ClusterNodes are the base URLs probed by `recall cluster status`;
+	// each should serve the distributed /healthz and /diagnostics
+	// endpoints.
+	ClusterNodes []string `json:"cluster_nodes" yaml:"cluster_nodes"`
+}
+
 // WithDefaults fills zero-valued fields with sensible defaults. It is
 // applied automatically by Load and is safe to call on a partial config.
 func (c *Config) WithDefaults() {
@@ -244,6 +283,14 @@ func (c *Config) WithDefaults() {
 	if st.Chunking.Overlap == 0 {
 		st.Chunking.Overlap = 50
 	}
+
+	cl := &c.CLI
+	if cl.Timeout == 0 {
+		cl.Timeout = Duration(30 * time.Second)
+	}
+	if cl.Output == "" {
+		cl.Output = OutputTable
+	}
 }
 
 // Load reads a configuration file (JSON or YAML, chosen by extension),
@@ -266,11 +313,27 @@ func Load(path string) (*Config, error) {
 	default:
 		return nil, fmt.Errorf("unsupported config extension %q (want .json, .yaml, or .yml)", filepath.Ext(path))
 	}
+	cfg.normalizeSlices()
 	cfg.WithDefaults()
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("validating config %s: %w", path, err)
 	}
 	return cfg, nil
+}
+
+// normalizeSlices canonicalizes empty slices to nil so that Save/Load
+// round-trips are stable across the JSON and YAML encodings (YAML decodes
+// "[]" and "null" into different slice states).
+func (c *Config) normalizeSlices() {
+	if len(c.Auth.APIKeys) == 0 {
+		c.Auth.APIKeys = nil
+	}
+	if len(c.Auth.ScopedKeys) == 0 {
+		c.Auth.ScopedKeys = nil
+	}
+	if len(c.CLI.ClusterNodes) == 0 {
+		c.CLI.ClusterNodes = nil
+	}
 }
 
 // Save writes the configuration to path as JSON or YAML based on the
@@ -384,6 +447,21 @@ func (c *Config) Validate() error {
 		}
 	}
 
+	cl := c.CLI
+	if cl.URL != "" {
+		if _, err := url.ParseRequestURI(cl.URL); err != nil {
+			problems = append(problems, fmt.Sprintf("cli.url %q is not a valid URL: %v", cl.URL, err))
+		}
+	}
+	switch cl.Output {
+	case "", OutputTable, OutputJSON, OutputYAML:
+	default:
+		problems = append(problems, fmt.Sprintf("cli.output %q unknown (want %q, %q, or %q)", cl.Output, OutputTable, OutputJSON, OutputYAML))
+	}
+	if cl.Timeout < 0 {
+		problems = append(problems, "cli.timeout must be >= 0")
+	}
+
 	if len(problems) > 0 {
 		return errors.New("invalid config: " + strings.Join(problems, "; "))
 	}
@@ -430,6 +508,12 @@ func (c *Config) ApplyEnv(prefix string) {
 	applyString(prefix, &c.Auth.JWTSecret, "AUTH__JWT_SECRET")
 	applyString(prefix, &c.Auth.JWTIssuer, "AUTH__JWT_ISSUER")
 	applyString(prefix, &c.Auth.JWTAudience, "AUTH__JWT_AUDIENCE")
+
+	applyString(prefix, &c.CLI.URL, "CLI__URL")
+	applyString(prefix, &c.CLI.APIKey, "CLI__API_KEY")
+	applyDuration(prefix, &c.CLI.Timeout, "CLI__TIMEOUT")
+	applyString(prefix, &c.CLI.Output, "CLI__OUTPUT")
+	applyStringSlice(prefix, &c.CLI.ClusterNodes, "CLI__CLUSTER_NODES")
 }
 
 func parseInt(v string) (int, error)     { return strconv.Atoi(v) }

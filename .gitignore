@@ -2,3 +2,5 @@
 coverage.out
 *.test
 *.out
+/recall
+/recall-server

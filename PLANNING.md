@@ -153,4 +153,23 @@
 - Confidence aggregation is efficient: ~3-4 ns/op
 - Entity extraction handles natural language: ~2.9 μs/op
 - Path exploration scales well: ~2.6 μs/op
+
+---
+
+## Phase 29: CLI Tool
+
+### Completed
+
+- [x] `cmd/recall` cobra CLI with two execution modes:
+  - **local** — in-process against the configured store (SQLite or memory)
+  - **server** — typed HTTP client of a running recall-server (`--server` flag or `cli.url`)
+- [x] Core commands: `upload` (files + recursive directories), `search`, `hybrid-search`, `rag`, `graph` (+ `graph list`), `reason` (NL query or `--from`/`--to` path exploration)
+- [x] Management commands: `store info`, `store migrate` (versioned SQL migration files), `store backup` (online VACUUM INTO), `store restore` (atomic rename), `cluster status` (node /diagnostics probes, exit 1 on down nodes)
+- [x] Evaluation commands: `eval` (Precision/Recall/MRR/NDCG@K, `--save` report), `eval compare` (tolerance-gated regression check, exit 2 — CI gate)
+- [x] Output formatting: table, JSON, YAML (`-o/--output` or `cli.output`)
+- [x] Configuration: `--config` → `$HOME/.recall.yaml` (.yml/.json) → defaults; `RECALL__SECTION__KEY` env overrides; new `cli` config section (url, api_key, timeout, output, cluster_nodes)
+- [x] New `app` package — shared service assembly so recall-server and the CLI wire components identically (recall-server refactored onto it)
+- [x] New `client` package — typed REST client for the recall-server API (CLI server-mode transport)
+- [x] Tests: `cmd/recall` at 87.6% coverage (end-to-end local + server mode, exit codes, config resolution), `app` 95.9%, `client` 84.8%, `config` 92.8%
+
 - Reasoning engine provides fast results: ~258 ns/op
