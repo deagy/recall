@@ -242,11 +242,11 @@ there.
 - [x] Store feedback in metadata for future training — `feedback.Collector` (thread-safe training store) + `Feedback.ToMetadata()`
 
 ### 24.2 Evaluation Framework
-- [ ] `eval.RetrievalEval` — precision, recall, MRR, NDCG at K
-- [ ] `eval.RAGEval` — answer quality metrics (faithfulness, relevance)
-- [ ] `eval.BenchmarkSuite` — regression testing for retrieval quality
-- [ ] `eval.Dataset` — load/save evaluation datasets
-- [ ] `eval.Report` — generate evaluation reports
+- [x] `eval.RetrievalEval` — Precision@K, Recall@K, MRR, NDCG@K (pure functions + `ComputeRetrievalMetrics`, graded or binary relevance)
+- [x] `eval.RAGEval` — answer quality (faithfulness, relevance, correctness) via a pluggable `Judge` interface; deterministic `OverlapJudge` included, LLM judge pluggable
+- [x] `eval.BenchmarkSuite` — regression testing: `Run` / `RunWithAnswers` over a `RetrievalSystem`, plus `Compare` (baseline vs. current with tolerance → regressions/improvements)
+- [x] `eval.Dataset` — JSON load/save of evaluation datasets (`EvalQuery`: relevant IDs, graded relevance, context, reference answer)
+- [x] `eval.Report` — aggregate report with JSON/Markdown output; `SaveJSON`/`LoadReport` enable golden-file regression checks in CI
 
 ### 24.3 Human-in-the-Loop
 - [ ] `hitl.ReviewQueue` — queue chunks for human review
