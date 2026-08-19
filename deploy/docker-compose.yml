@@ -1,0 +1,64 @@
+# Recall API server — single node.
+#
+#   docker compose -f deploy/docker-compose.yml up --build
+#
+# Configuration precedence: environment variables > /etc/recall file >
+# built-in defaults. The example below runs an in-memory store with the
+# mock embedder so it works out of the box; switch to the sqlite backend
+# (and a real embedder) for persistent production use.
+
+services:
+  recall-server:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: recall-server:latest
+    command: ["-config", "/etc/recall/recall.yaml"]
+    ports:
+      - "${RECALL_PORT:-8080}:8080"
+    volumes:
+      # Config mount: drop a recall.yaml (or .json) into ./config.
+      - ./config:/etc/recall:ro
+      # SQLite data (used when store.backend = sqlite).
+      - recall-data:/var/lib/recall
+    environment:
+      # Environment overrides (double-underscore nesting).
+      RECALL__SERVER__HOST: 0.0.0.0
+      RECALL__SERVER__PORT: "8080"
+      # Secrets: name of the env var holding the embedder API key.
+      # RECALL__STORE__EMBEDDER__TYPE: openai
+      # RECALL__STORE__EMBEDDER__API_KEY_ENV: OPENAI_API_KEY
+      # OPENAI_API_KEY: ${OPENAI_API_KEY:?set OPENAI_API_KEY}
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "/usr/local/bin/recall-server",
+          "-health-probe",
+          "-probe-url",
+          "http://127.0.0.1:8080/healthz",
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 5s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  recall-data:
+
+# --- Multi-node template ---------------------------------------------------
+# The Recall API is stateless per node when paired with an external store;
+# run N replicas behind a load balancer, each with its own SQLite volume
+# (or migrate to a shared backend):
+#
+#   recall-server-2:
+#     extends: recall-server
+#     ports: ["8081:8080"]
+#     environment:
+#       RECALL__SERVER__PORT: "8080"
+#     volumes:
+#       - recall-data-2:/var/lib/recall
+#
+# volumes:
+#   recall-data-2:

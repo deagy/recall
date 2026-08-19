@@ -1,0 +1,36 @@
+# Recall API server configuration (YAML).
+#
+# Copy to recall.yaml (docker-compose mounts ./config at /etc/recall and
+# the container runs with -config /etc/recall/recall.yaml). Environment
+# variables of the form RECALL__SECTION__KEY override any value here.
+server:
+  host: 0.0.0.0
+  port: 8080
+  max_upload_bytes: 10485760
+  read_timeout: 30s
+  write_timeout: 60s
+  idle_timeout: 120s
+  allow_cors: false
+
+store:
+  backend: sqlite          # memory | sqlite
+  path: /var/lib/recall/recall.db
+  namespace: default
+  embedder:
+    type: mock             # mock | openai | cohere | ollama | onnx
+    model: ""              # e.g. text-embedding-3-small (openai)
+    dimension: 384
+    api_key_env: ""        # name of env var holding the API key
+    base_url: ""           # provider endpoint override
+    path: ""               # onnx model file
+  chunking:
+    strategy: recursive    # fixed | recursive
+    max_tokens: 512
+    overlap: 50
+
+auth:
+  enabled: false
+  api_keys: []
+  jwt_secret: ""
+  jwt_issuer: ""
+  jwt_audience: ""

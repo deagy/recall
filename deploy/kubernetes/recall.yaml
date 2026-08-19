@@ -1,0 +1,145 @@
+# Recall API server — Kubernetes manifests (Deployment, Service, HPA).
+#
+#   kubectl apply -f deploy/kubernetes/recall.yaml
+#
+# A ConfigMap holds the service configuration and a Secret holds any API
+# keys. The image must be pushed to your registry first (see deploy/Dockerfile).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: recall-config
+  labels:
+    app: recall-server
+data:
+  recall.yaml: |
+    server:
+      host: 0.0.0.0
+      port: 8080
+      read_timeout: 30s
+      write_timeout: 60s
+    store:
+      backend: sqlite
+      path: /var/lib/recall/recall.db
+      namespace: default
+      embedder:
+        type: ollama
+        model: nomic-embed-text
+      chunking:
+        strategy: recursive
+        max_tokens: 512
+        overlap: 50
+    auth:
+      # Authentication is off by default; enable it and inject keys via
+      # the recall-secrets Secret (RECALL__AUTH__API_KEYS /
+      # RECALL__AUTH__JWT_SECRET), then set enabled: true here.
+      enabled: false
+      api_keys: []
+      jwt_secret: ""
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: recall-secrets
+  labels:
+    app: recall-server
+type: Opaque
+stringData:
+  # Fill in real values before applying (e.g. via sealed-secrets or
+  # external-secrets); empty values disable the corresponding feature.
+  RECALL__AUTH__API_KEYS: ""
+  RECALL__AUTH__JWT_SECRET: ""
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: recall-server
+  labels:
+    app: recall-server
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: recall-server
+  template:
+    metadata:
+      labels:
+        app: recall-server
+    spec:
+      containers:
+        - name: recall-server
+          image: registry.example.com/recall-server:latest
+          args: ["-config", "/etc/recall/recall.yaml"]
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - secretRef:
+                name: recall-secrets
+          volumeMounts:
+            - name: config
+              mountPath: /etc/recall
+              readOnly: true
+            - name: data
+              mountPath: /var/lib/recall
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+      volumes:
+        - name: config
+          configMap:
+            name: recall-config
+        - name: data
+          # Use a PersistentVolumeClaim per replica for durability; an
+          # emptyDir is shown here for a single-replica smoke test.
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: recall-server
+  labels:
+    app: recall-server
+spec:
+  selector:
+    app: recall-server
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: recall-server
+  labels:
+    app: recall-server
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: recall-server
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

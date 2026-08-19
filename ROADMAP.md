@@ -344,15 +344,25 @@ there.
 **Goal:** Expose Recall as a service.
 
 ### 27.1 REST API
-- [ ] `api.Server` — HTTP server using standard library
-- [ ] `POST /upload` — upload documents
-- [ ] `GET /search` — vector search
-- [ ] `POST /hybrid-search` — hybrid search
-- [ ] `POST /rag` — full RAG pipeline query
-- [ ] `GET /graph/{entity}` — graph entity lookup
-- [ ] `POST /graph/reason` — graph reasoning
-- [ ] OpenAPI/Swagger specification
-- [ ] API authentication (API keys, JWT)
+- [x] `api.Server` — HTTP server using standard library
+- [x] `POST /upload` — upload documents
+- [x] `GET /search` — vector search
+- [x] `POST /hybrid-search` — hybrid search
+- [x] `POST /rag` — full RAG pipeline query
+- [x] `GET /graph/{entity}` — graph entity lookup
+- [x] `POST /graph/reason` — graph reasoning
+- [x] OpenAPI/Swagger specification
+- [x] API authentication (API keys, JWT)
+
+> **27.1 complete** — the `api` package exposes `Server`/`Handler` built on the
+> standard library `net/http` (Go 1.22+ `ServeMux` method+path routing).
+> Operational endpoints `/healthz`, `/readyz`, and `/diagnostics` are
+> unauthenticated by default; data endpoints are protected by an optional
+> `Authenticator` (static API keys via `X-API-Key`/Bearer, or HS256 JWTs
+> verified with stdlib `crypto/hmac` — no external auth dependency). The
+> OpenAPI 3.0 document is embedded with `go:embed` and served at
+> `GET /openapi.json`. `cmd/recall-server` is the runnable entrypoint with
+> graceful SIGINT/SIGTERM shutdown.
 
 ### 27.2 gRPC (Future)
 - [ ] Protocol buffer definitions
@@ -360,16 +370,34 @@ there.
 - [ ] Bidirectional streaming for RAG responses
 
 ### 27.3 Configuration
-- [ ] YAML/JSON configuration file support
-- [ ] Environment variable overrides
-- [ ] Configuration validation
-- [ ] Hot-reload support
+- [x] YAML/JSON configuration file support
+- [x] Environment variable overrides
+- [x] Configuration validation
+- [x] Hot-reload support
+
+> **27.3 complete** — the `config` package loads JSON or YAML (by extension),
+> applies defaults, and validates (combined multi-problem errors). Environment
+> overrides use `RECALL__SECTION__KEY` (double-underscore nesting, e.g.
+> `RECALL__SERVER__PORT`); malformed values are ignored so a typo never blocks
+> startup. `config.Watcher` polls the file and hot-reloads via a callback,
+> skipping (and remembering via `LastError`) invalid edits so a bad change
+> never takes a running service down.
 
 ### 27.4 Deployment
-- [ ] Dockerfile
-- [ ] docker-compose for multi-node deployment
-- [ ] Kubernetes manifests (Deployment, Service, HPA)
-- [ ] Health check endpoints for orchestrators
+- [x] Dockerfile
+- [x] docker-compose for multi-node deployment
+- [x] Kubernetes manifests (Deployment, Service, HPA)
+- [x] Health check endpoints for orchestrators
+
+> **27.4 complete** — `deploy/Dockerfile` is a multi-stage, `CGO_ENABLED=0`
+> pure-Go build on a distroless/nonroot base (no C toolchain needed). Because
+> distroless ships no `curl`, `recall-server` gains a `-health-probe` mode for
+> the in-image `HEALTHCHECK`. `deploy/docker-compose.yml` runs a single node
+> with a mounted config + SQLite volume and documents a multi-node template;
+> `deploy/kubernetes/recall.yaml` provides a ConfigMap, Secret, Deployment
+> (readiness `/readyz` + liveness `/healthz` probes), Service, and HPA.
+> Example configs live in `deploy/config/` and are guarded by a config-package
+> regression test.
 
 **Estimated Effort:** 4–5 weeks
 **Priority:** Medium-Low

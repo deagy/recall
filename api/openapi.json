@@ -1,0 +1,163 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Recall API",
+    "version": "27.1.0",
+    "description": "HTTP service exposing the Recall RAG SDK: document upload, vector/hybrid search, RAG pipeline queries, and knowledge-graph lookups with multi-hop reasoning. All bodies are JSON."
+  },
+  "servers": [{ "url": "/" }],
+  "tags": [
+    { "name": "ingest" }, { "name": "search" }, { "name": "rag" },
+    { "name": "graph" }, { "name": "ops" }
+  ],
+  "paths": {
+    "/upload": {
+      "post": {
+        "tags": ["ingest"],
+        "summary": "Upload a document",
+        "security": [{ "ApiKeyAuth": [] }, { "BearerAuth": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UploadRequest" } } } },
+        "responses": {
+          "200": { "description": "Document ingested", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UploadResponse" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "413": { "description": "Body too large" }
+        }
+      }
+    },
+    "/search": {
+      "get": {
+        "tags": ["search"],
+        "summary": "Vector search",
+        "security": [{ "ApiKeyAuth": [] }, { "BearerAuth": [] }],
+        "parameters": [
+          { "name": "q", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "k", "in": "query", "schema": { "type": "integer", "default": 10 } },
+          { "name": "min_score", "in": "query", "schema": { "type": "number", "default": 0 } },
+          { "name": "ef_search", "in": "query", "schema": { "type": "integer", "default": 0 } }
+        ],
+        "responses": {
+          "200": { "description": "Results", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SearchResponse" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/hybrid-search": {
+      "post": {
+        "tags": ["search"],
+        "summary": "Hybrid search (vector + BM25)",
+        "security": [{ "ApiKeyAuth": [] }, { "BearerAuth": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HybridSearchRequest" } } } },
+        "responses": {
+          "200": { "description": "Results", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SearchResponse" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/rag": {
+      "post": {
+        "tags": ["rag"],
+        "summary": "Run the RAG pipeline",
+        "security": [{ "ApiKeyAuth": [] }, { "BearerAuth": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RAGRequest" } } } },
+        "responses": {
+          "200": { "description": "RAG response", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RAGResponse" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/graph/{entity}": {
+      "get": {
+        "tags": ["graph"],
+        "summary": "Look up a graph entity",
+        "security": [{ "ApiKeyAuth": [] }, { "BearerAuth": [] }],
+        "parameters": [{ "name": "entity", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Entity with neighbors and relations", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EntityResponse" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "description": "Entity not found" }
+        }
+      }
+    },
+    "/graph/reason": {
+      "post": {
+        "tags": ["graph"],
+        "summary": "Multi-hop graph reasoning",
+        "description": "Provide either query (natural-language) or from+to (path exploration).",
+        "security": [{ "ApiKeyAuth": [] }, { "BearerAuth": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ReasonRequest" } } } },
+        "responses": {
+          "200": { "description": "Inferred relations and/or paths", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ReasonResponse" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/healthz": {
+      "get": { "tags": ["ops"], "summary": "Liveness/readiness health check", "responses": { "200": { "description": "Healthy" }, "503": { "description": "Unhealthy" } } }
+    },
+    "/readyz": {
+      "get": { "tags": ["ops"], "summary": "Readiness probe", "responses": { "200": { "description": "Ready" }, "503": { "description": "Not ready" } } }
+    },
+    "/diagnostics": {
+      "get": { "tags": ["ops"], "summary": "Diagnostics snapshot", "responses": { "200": { "description": "Diagnostics JSON" } } }
+    },
+    "/openapi.json": {
+      "get": { "tags": ["ops"], "summary": "This OpenAPI document", "responses": { "200": { "description": "OpenAPI 3.0 JSON" } } }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": { "type": "apiKey", "in": "header", "name": "X-API-Key" },
+      "BearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" }
+    },
+    "responses": {
+      "BadRequest": { "description": "Invalid request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "Unauthorized": { "description": "Missing or invalid credentials", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+    },
+    "schemas": {
+      "Error": { "type": "object", "properties": { "code": { "type": "string" }, "message": { "type": "string" } } },
+      "UploadRequest": {
+        "type": "object",
+        "required": ["content"],
+        "properties": {
+          "id": { "type": "string" }, "title": { "type": "string" }, "author": { "type": "string" },
+          "source": { "type": "string" }, "namespace": { "type": "string" },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "metadata": { "type": "object", "additionalProperties": true },
+          "content": { "type": "string" }
+        }
+      },
+      "UploadResponse": {
+        "type": "object",
+        "properties": { "id": { "type": "string" }, "title": { "type": "string" }, "namespace": { "type": "string" }, "chunks": { "type": "integer" }, "created_at": { "type": "string" }, "updated_at": { "type": "string" } }
+      },
+      "HybridSearchRequest": {
+        "type": "object",
+        "required": ["query"],
+        "properties": { "query": { "type": "string" }, "k": { "type": "integer", "default": 10 }, "min_score": { "type": "number", "default": 0 }, "bm25_weight": { "type": "number", "default": 0.5 }, "ef_search": { "type": "integer", "default": 0 } }
+      },
+      "Result": {
+        "type": "object",
+        "properties": { "id": { "type": "string" }, "document": { "type": "string" }, "chunk_index": { "type": "integer" }, "content": { "type": "string" }, "score": { "type": "number" }, "metadata": { "type": "object", "additionalProperties": true } }
+      },
+      "SearchResponse": { "type": "object", "properties": { "query": { "type": "string" }, "count": { "type": "integer" }, "results": { "type": "array", "items": { "$ref": "#/components/schemas/Result" } } } },
+      "RAGRequest": { "type": "object", "required": ["query"], "properties": { "query": { "type": "string" }, "hybrid": { "type": "boolean", "default": false } } },
+      "Citation": { "type": "object", "properties": { "number": { "type": "integer" }, "chunk_id": { "type": "string" }, "document": { "type": "string" }, "score": { "type": "number" }, "snippet": { "type": "string" } } },
+      "RAGResponse": {
+        "type": "object",
+        "properties": { "query": { "type": "string" }, "answer": { "type": "string" }, "context": { "type": "string" }, "tokens": { "type": "integer" }, "sources": { "type": "array", "items": { "$ref": "#/components/schemas/Result" } }, "citations": { "type": "array", "items": { "$ref": "#/components/schemas/Citation" } } }
+      },
+      "ReasonRequest": { "type": "object", "properties": { "query": { "type": "string" }, "from": { "type": "string" }, "to": { "type": "string" }, "max_hops": { "type": "integer", "default": 3 } } },
+      "InferredRelation": { "type": "object", "properties": { "from": { "type": "string" }, "to": { "type": "string" }, "type": { "type": "string" }, "confidence": { "type": "number" }, "rule": { "type": "string" }, "hops": { "type": "integer" } } },
+      "GraphPath": { "type": "object", "properties": { "entities": { "type": "array", "items": { "type": "string" } }, "relations": { "type": "array", "items": { "type": "string" } } } },
+      "ReasonResponse": { "type": "object", "properties": { "inferences": { "type": "array", "items": { "$ref": "#/components/schemas/InferredRelation" } }, "paths": { "type": "array", "items": { "$ref": "#/components/schemas/GraphPath" } } } },
+      "Entity": { "type": "object", "properties": { "id": { "type": "string" }, "label": { "type": "string" }, "type": { "type": "string" }, "properties": { "type": "object", "additionalProperties": { "type": "string" } }, "source_chunks": { "type": "array", "items": { "type": "string" } } } },
+      "Relation": { "type": "object", "properties": { "from": { "type": "string" }, "to": { "type": "string" }, "type": { "type": "string" }, "weight": { "type": "number" } } },
+      "EntityResponse": { "type": "object", "properties": { "entity": { "$ref": "#/components/schemas/Entity" }, "neighbors": { "type": "array", "items": { "$ref": "#/components/schemas/Entity" } }, "relations": { "type": "array", "items": { "$ref": "#/components/schemas/Relation" } } } }
+    }
+  }
+}
