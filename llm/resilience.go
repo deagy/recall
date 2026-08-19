@@ -250,7 +250,7 @@ func NewMiddleware(core Backend, fns ...MiddlewareFunc) *Middleware {
 // Build applies all decorators to the core backend and returns the composed
 // result.
 func (m *Middleware) Build() Backend {
-	var b Backend = m.core
+	b := m.core
 	for i := len(m.fns) - 1; i >= 0; i-- {
 		b = m.fns[i](b)
 	}

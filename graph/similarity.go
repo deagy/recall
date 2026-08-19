@@ -169,6 +169,7 @@ func EmbeddingDiversity(embeddings [][]float32) float64 {
 
 	for i := 0; i < len(embeddings); i++ {
 		for j := i + 1; j < len(embeddings); j++ {
+			//nolint:gosec // G602: i/j bounded by len(embeddings) in the enclosing loops
 			dist := embeddingDistance(embeddings[i], embeddings[j])
 			totalDist += dist
 			count++

@@ -1,0 +1,119 @@
+# golangci-lint configuration (schema version 2).
+# https://golangci-lint.run/usage/configuration/
+#
+# Default linters are enabled implicitly: errcheck, govet, ineffassign,
+# staticcheck, unused. CI runs the pinned version from
+# .github/workflows/go.yml; locally: `golangci-lint run`.
+#
+# Exclusions below document deliberate tradeoffs; each is scoped as tightly
+# as possible (test files, specific rules, or named functions).
+version: "2"
+
+run:
+  timeout: 10m
+
+linters:
+  enable:
+    - gosec       # security-oriented checks
+    - misspell    # common misspellings in comments/strings
+    - revive      # golint successor, configured below
+    - unconvert   # unnecessary type conversions
+  settings:
+    errcheck:
+      # Intentionally unchecked: CLI/HTTP output to stdout/stderr and
+      # deferred resource cleanup at process/teardown boundaries.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - fmt.Print
+        - fmt.Printf
+        - fmt.Println
+        - (*text/tabwriter.Writer).Flush
+    gosec:
+      excludes:
+        # G115: integer overflow conversion — reviewed; remaining hits are
+        # bounded-value conversions (e.g. lengths into int32 for protobuf
+        # wire encoding).
+        - G115
+        # G301/G306: directories/files created with 0755/0644 — the library
+        # only ever writes non-sensitive data files (indexes, caches,
+        # backups), never secrets.
+        - G301
+        - G306
+        # G304: file inclusion — loaders and the CLI intentionally open
+        # user-supplied paths (that is their purpose). Path validation is
+        # the caller's responsibility; see SECURITY.md.
+        - G304
+        # G404: weak random source — math/rand is used for deterministic
+        # mock embeddings, jitter, and test fixtures only, never for
+        # security purposes.
+        - G404
+        # G401/G501: weak cryptographic primitive — crypto/md5 is used only
+        # as a uniform hash for consistent-hash ring sharding (distributed/);
+        # the library implements no security-relevant crypto.
+        - G401
+        - G501
+        # G302: file permissions — NDJSON analytics sink and other data
+        # files are 0644 non-sensitive outputs, never secrets.
+        - G302
+        # G104: errors unhandled — errcheck is the project's error-handling
+        # gate and is configured for exactly that; G104 would duplicate it.
+        - G104
+    staticcheck:
+      checks:
+        - all
+        # ST1005: error strings should not be capitalized — the codebase
+        # intentionally prefixes errors with proper nouns (ONNX operator
+        # names, "SQLite", package identifiers); changing ~45 strings is
+        # cosmetic churn for zero benefit.
+        - -ST1005
+    revive:
+      rules:
+        # Exported identifiers already carry godoc comments; the style
+        # nits of this rule duplicate them with noise.
+        - name: exported
+          disabled: true
+        # Complexity is managed at the design level; these thresholds
+        # flag long (but well-factored) switch-based dispatchers.
+        - name: cyclomatic
+          disabled: true
+        - name: cognitive-complexity
+          disabled: true
+  exclusions:
+    generated: lax
+    rules:
+      # Test files legitimately ignore errors from setup/teardown helpers
+      # (deferred closes, os.Setenv, writes to temp buffers).
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gosec
+      # Test files deliberately pass nil contexts, compare generated IDs
+      # for uniqueness, and use helper idioms that staticcheck dislikes.
+      - path: _test\.go
+        linters:
+          - staticcheck
+        text: "SA1012|SA4000|QF1001|S1030|S1009"
+      # Deferred resource cleanup: at a defer site the Close error cannot be
+      # returned to the caller, and the write that could fail is already
+      # checked at its call site. Same for best-effort temp-file removal and
+      # `defer tx.Rollback()` (Rollback after Commit returns sql.ErrTxDone,
+      # which is the expected outcome, not a failure).
+      - linters:
+          - errcheck
+        text: "Error return value of `.*Close` is not checked"
+      - linters:
+          - errcheck
+        text: "Error return value of `os\\.Remove(All)?` is not checked"
+      - linters:
+          - errcheck
+        text: "Error return value of `tx.Rollback` is not checked"
+
+formatters:
+  enable:
+    - gofmt
+  settings:
+    gofmt:
+      simplify: true
+

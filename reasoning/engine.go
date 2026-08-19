@@ -194,11 +194,9 @@ func (e *Engine) ExplorePaths(from, to string) []*graph.Path {
 
 // Reason finds inferred answers to a natural language query by exploring the graph.
 // It combines vector similarity (via entity matching) with graph traversal.
+// The maxHops argument is accepted for API symmetry with path exploration;
+// traversal depth is bounded by the engine's configured MaxDepth.
 func (e *Engine) Reason(query string, maxHops int) []*InferredRelation {
-	if maxHops <= 0 || maxHops > e.maxDepth {
-		maxHops = e.maxDepth
-	}
-
 	// Extract entities from the query (simple heuristic: capitalized words)
 	words := strings.Fields(query)
 	var queryEntities []string

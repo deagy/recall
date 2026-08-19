@@ -1,4 +1,4 @@
-// RAGPipeline orchestrates the RAG workflow: retrieve relevant chunks,
+// Package pipeline implements the RAG workflow: retrieve relevant chunks,
 // assemble context, and render a prompt for LLM consumption.
 package pipeline
 

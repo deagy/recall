@@ -107,7 +107,7 @@ func Margin(scores []float64) float64 {
 	} else {
 		top, second = scores[1], scores[0]
 	}
-	for _, s := range scores[2:] {
+	for _, s := range scores[2:] { //nolint:gosec // G602: len(scores) >= 2 guaranteed above
 		if s > top {
 			second = top
 			top = s

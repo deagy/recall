@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// UpdateGolden, when true, makes Golden and GoldenJSON write the file at the
+// UpdateGolden makes Golden and GoldenJSON, when true, write the file at the
 // given path with the current value (and skip the assertion) instead of
 // failing on a mismatch. Tests typically wire it to a custom flag, e.g.:
 //

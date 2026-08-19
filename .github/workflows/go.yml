@@ -1,55 +1,143 @@
-# This workflow will build a golang project
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-go
-
+# Continuous integration: lint, build, test, coverage gate, security scans,
+# and benchmark regression detection.
 name: Go
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
+
+permissions:
+  contents: read
 
 jobs:
-
-  build:
+  lint:
+    name: Lint (golangci-lint)
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Set up Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.26'
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.26'
 
-    - name: vet
-      run: go vet ./...
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.12
+          args: --timeout=10m
 
-    - name: Check formatting
-      run: |
-        unformatted=$(gofmt -s -l .)
-        if [ -n "$unformatted" ]; then
-          echo "::error::gofmt -s required on:"
-          echo "$unformatted"
-          exit 1
-        fi
+  test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-    - name: Build
-      run: go build -v ./...
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.26'
 
-    - name: Test
-      run: go test ./... -count=1 -race
+      - name: vet
+        run: go vet ./...
 
-    # Coverage regression gate: overall statement coverage must stay >= 80%.
-    - name: Coverage gate (>= 80%)
-      run: |
-        go test ./... -count=1 -coverprofile=coverage.out -covermode=atomic
-        total=$(go tool cover -func=coverage.out | awk '/^total:/ {print $3}' | tr -d '%')
-        echo "overall coverage: ${total}%"
-        if awk "BEGIN {exit !($total < 80)}"; then
-          echo "::error::overall coverage ${total}% is below the 80% gate"
-          exit 1
-        fi
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -s -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::gofmt -s required on:"
+            echo "$unformatted"
+            exit 1
+          fi
 
-    # Smoke-run every benchmark once; CI does not assert benchmark numbers.
-    - name: Bench
-      run: go test ./... -run=^$ -bench=. -benchtime=1x -count=1
+      - name: Build
+        run: go build -v ./...
+
+      - name: Test
+        run: go test ./... -count=1 -race
+
+      # Coverage regression gate: overall statement coverage must stay >= 80%.
+      - name: Coverage gate (>= 80%)
+        run: |
+          go test ./... -count=1 -coverprofile=coverage.out -covermode=atomic
+          total=$(go tool cover -func=coverage.out | awk '/^total:/ {print $3}' | tr -d '%')
+          echo "overall coverage: ${total}%"
+          if awk "BEGIN {exit !($total < 80)}"; then
+            echo "::error::overall coverage ${total}% is below the 80% gate"
+            exit 1
+          fi
+
+      - name: Upload coverage profile
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
+
+      # Smoke-run every benchmark once; numbers are checked in the
+      # benchmark job below.
+      - name: Bench smoke
+        run: go test ./... -run=^$ -bench=. -benchtime=1x -count=1
+
+  security:
+    name: Vulnerability & License Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.26'
+
+      # Dependency vulnerability scanning (golang.org/x/vuln).
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+      # License compliance: all direct and indirect dependency licenses must
+      # be permissive (default allowlist: MIT, Apache-2.0, BSD-*, ISC, ...).
+      - name: License check
+        run: go run github.com/google/go-licenses@latest check ./...
+
+  benchmark:
+    name: Benchmark Regression Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          path: current
+
+      # Pull requests are compared against their merge base; pushes to main
+      # only record results as an artifact.
+      - name: Checkout base branch
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.base_ref }}
+          path: base
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.26'
+
+      - name: Run benchmarks (current)
+        working-directory: current
+        run: go test ./... -run=^$ -bench=. -benchtime=10x -benchmem -count=1 > ../bench-current.txt
+
+      - name: Run benchmarks (base)
+        if: github.event_name == 'pull_request'
+        working-directory: base
+        run: go test ./... -run=^$ -bench=. -benchtime=10x -benchmem -count=1 > ../bench-base.txt
+
+      - name: Compare
+        if: github.event_name == 'pull_request'
+        run: ./current/scripts/benchcompare.sh bench-base.txt bench-current.txt 50
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: bench-*.txt

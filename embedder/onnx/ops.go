@@ -437,14 +437,14 @@ func opReshape(n *Node, in []*Tensor) ([]*Tensor, error) {
 	known := int64(1)
 	unknown := -1
 	for i, d := range shape {
-		switch {
-		case d == 0:
+		switch d {
+		case 0:
 			if i >= len(in[0].Shape) {
 				return nil, fmt.Errorf("Reshape: 0 at position %d exceeds input rank %d", i, len(in[0].Shape))
 			}
 			shape[i] = in[0].Shape[i]
 			known *= shape[i]
-		case d == -1:
+		case -1:
 			if unknown >= 0 {
 				return nil, fmt.Errorf("Reshape: at most one -1 allowed")
 			}

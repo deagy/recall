@@ -104,7 +104,9 @@ func exampleHybridSearch(ctx context.Context) {
 	}
 
 	for i, doc := range docs {
-		memStore.Upload(ctx, doc, contents[i])
+		if err := memStore.Upload(ctx, doc, contents[i]); err != nil {
+			log.Fatalf("hybrid upload failed: %v", err)
+		}
 	}
 
 	// Hybrid search with vector + BM25 fusion

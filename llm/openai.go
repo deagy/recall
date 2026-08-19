@@ -138,10 +138,7 @@ func (c *OpenAIClient) convertRequest(req *ChatRequest) OpenAIChatRequest {
 	}
 
 	for _, msg := range req.Messages {
-		openaiReq.Messages = append(openaiReq.Messages, OpenAIMessage{
-			Role:    msg.Role,
-			Content: msg.Content,
-		})
+		openaiReq.Messages = append(openaiReq.Messages, OpenAIMessage(msg))
 	}
 
 	if req.Temperature > 0 {
@@ -163,10 +160,7 @@ func (c *OpenAIClient) convertResponse(resp *OpenAIChatResponse) *ChatResponse {
 	msg := choice.Message
 
 	return &ChatResponse{
-		Message: Message{
-			Role:    msg.Role,
-			Content: msg.Content,
-		},
+		Message: Message(msg),
 		Usage: Usage{
 			PromptTokens:     resp.Usage.PromptTokens,
 			CompletionTokens: resp.Usage.CompletionTokens,

@@ -172,4 +172,20 @@
 - [x] New `client` package — typed REST client for the recall-server API (CLI server-mode transport)
 - [x] Tests: `cmd/recall` at 87.6% coverage (end-to-end local + server mode, exit codes, config resolution), `app` 95.9%, `client` 84.8%, `config` 92.8%
 
+---
+
+## Phase 32: Project Hygiene & Documentation
+
+### Completed (2026-08-19)
+
+- [x] **Linting** — `.golangci.yml` (schema v2): default linters (errcheck, govet, ineffassign, staticcheck, unused) + gosec, misspell, revive, unconvert; gofmt as formatter. All exclusions are narrow and documented inline (test-file idioms, deferred-close/rollback cleanup, non-sensitive file permissions, md5 for hash-ring sharding, errcheck-covered G104). Fixed every real finding in code (llm message conversions, ONNX type-switch, sqlite graph error handling, doc comments, example error checks, four analyzed gosec false positives via targeted `//nolint:gosec`). Result: **`golangci-lint run` = 0 issues** (baseline was 587).
+- [x] **CI/CD** — `.github/workflows/go.yml`: Lint job (pinned golangci-lint), Build & Test job (vet, gofmt check, build, `go test -race`, overall ≥80% coverage gate, coverage artifact, bench smoke), Vulnerability & License Scan job (govulncheck, go-licenses), Benchmark Regression job (`scripts/benchcompare.sh` baseline gate). `.github/workflows/tag.yml`: manual semver bump → annotated tag. `.github/workflows/release.yml`: tag-triggered build/test + cross-platform binaries via `scripts/release-build.sh` + GitHub release with generated notes.
+- [x] **Scripts** — `scripts/benchcompare.sh` (benchmark baseline/compare), `scripts/release-build.sh` (cross-platform release artifacts); both executable, `bash -n` clean.
+- [x] **Governance docs** — `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `ARCHITECTURE.md`, `GOVERNANCE.md`.
+- [x] **Per-package READMEs** — all 32 packages (30 library + 2 cmd), each with purpose, key types/constructors, minimal usage, and cross-links.
+- [x] **Examples** — `example/e2e` (deterministic offline tutorial: ingest → search → RAG → evaluation → graph/reasoning), `example/production` (in-process API server on an ephemeral port driven by the typed `client`), `example/README.md` index; all verified by running them.
+- [x] **Guides** — `docs/BENCHMARKS.md` (benchmark comparison guide), `docs/MIGRATION.md` (version upgrade guide).
+- [x] **Changelog** — `CHANGELOG.md` established (Keep a Changelog format).
+- [x] **Status docs** — `README.md` (Current Status + Testing sections), `ROADMAP.md` (Phase 32 complete, state table), this file.
+
 - Reasoning engine provides fast results: ~258 ns/op

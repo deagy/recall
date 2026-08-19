@@ -1,3 +1,7 @@
+// Package distributed provides a sharded, replicated store facade over
+// multiple in-process nodes: consistent hashing for shard assignment,
+// scatter-gather search with partial-failure tolerance, and cluster
+// diagnostics.
 package distributed
 
 import (

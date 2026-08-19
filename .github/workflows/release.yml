@@ -1,0 +1,45 @@
+# Release pipeline: builds the recall and recall-server binaries for all
+# supported platforms and publishes a GitHub release with auto-generated
+# notes (grouped from conventional commit messages since the last tag).
+#
+# Triggered when a semantic version tag (vX.Y.Z) is pushed — usually by the
+# automated tag.yml workflow.
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # release notes need the commit range since the last tag
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.26'
+
+      - name: Verify build and tests
+        run: |
+          go build ./...
+          go test ./... -count=1
+
+      - name: Build release binaries
+        run: ./scripts/release-build.sh "$GITHUB_REF_NAME"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            dist/*

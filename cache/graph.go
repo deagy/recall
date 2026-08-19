@@ -30,7 +30,7 @@ func NewGraphCache(maxSize int) *GraphCache {
 	}
 }
 
-// GenerateKey generates a cache key for a graph traversal query.
+// GenerateGraphTraversalKey generates a cache key for a graph traversal query.
 func GenerateGraphTraversalKey(entityID string, traversalType string, depth int) string {
 	key := fmt.Sprintf("graph:%s:%s:%d", entityID, traversalType, depth)
 	hash := sha256.Sum256([]byte(key))

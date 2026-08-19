@@ -489,12 +489,12 @@ func TestNewFixed_ZeroMaxTokens(t *testing.T) {
 }
 
 func TestChunker_Interface(t *testing.T) {
-	var c Chunker = NewFixed(DefaultConfig())
+	c := NewFixed(DefaultConfig())
 	if c == nil {
 		t.Fatal("expected non-nil chunker")
 	}
 
-	var r Chunker = NewRecursive(DefaultConfig())
+	r := NewRecursive(DefaultConfig())
 	if r == nil {
 		t.Fatal("expected non-nil chunker")
 	}

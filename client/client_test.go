@@ -244,8 +244,7 @@ func TestReason(t *testing.T) {
 	_ = out
 
 	// Natural-language reasoning over capitalized entity names.
-	out, err = c.Reason(ctx, ReasonRequest{Query: "Alice works at Acme and Acme is located in Berlin", MaxHops: 3})
-	if err != nil {
+	if _, err = c.Reason(ctx, ReasonRequest{Query: "Alice works at Acme and Acme is located in Berlin", MaxHops: 3}); err != nil {
 		t.Fatalf("reason query: %v", err)
 	}
 

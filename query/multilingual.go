@@ -27,7 +27,8 @@ const (
 	LanguageUnknown  Language = "unknown"
 )
 
-// LanguageName is the display name for prompting.
+// Name returns the display name for the language, used when building
+// prompts.
 func (l Language) Name() string {
 	switch l {
 	case LanguageEnglish:

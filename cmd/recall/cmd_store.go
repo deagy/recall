@@ -373,6 +373,7 @@ func runStoreBackup(cmd *cobra.Command, o *globalOptions, dest, dbPath string, f
 		return err
 	}
 	defer db.Close()
+	//nolint:gosec // G202: dest is embedded as a quoted SQL literal (quoteLiteral escapes it); VACUUM INTO has no parameterized form
 	if _, err := db.ExecContext(ctx, "VACUUM INTO "+quoteLiteral(dest)); err != nil {
 		return fmt.Errorf("backup: %w", err)
 	}

@@ -90,19 +90,19 @@ func shapeSize(shape []int64) int64 {
 // shape size, then returns the tensor.
 func NewTensor(shape []int64, dt DataType, data any) (*Tensor, error) {
 	var n int
-	switch data.(type) {
+	switch data := data.(type) {
 	case []float32:
-		n = len(data.([]float32))
+		n = len(data)
 	case []float64:
-		n = len(data.([]float64))
+		n = len(data)
 	case []int32:
-		n = len(data.([]int32))
+		n = len(data)
 	case []int64:
-		n = len(data.([]int64))
+		n = len(data)
 	case []bool:
-		n = len(data.([]bool))
+		n = len(data)
 	case []uint8:
-		n = len(data.([]uint8))
+		n = len(data)
 	default:
 		return nil, fmt.Errorf("onnx: unsupported tensor data type %T", data)
 	}

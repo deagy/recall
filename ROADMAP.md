@@ -8,11 +8,12 @@ This document outlines the future development roadmap for the Recall library, or
 
 | Metric | Status |
 |--------|--------|
-| Completed Phases | 23 (Phases 1–22, 26) |
-| Packages | 19 source packages + 1 example |
+| Completed Phases | 25 (Phases 1–22, 26, 29, 32) |
+| Packages | 30 library packages + 2 commands + 1 example |
 | All Tests Pass | ✅ Yes |
-| Overall Coverage Target | ✅ >80% in all 19 packages (re-measured 2026-08-18) |
+| Overall Coverage Target | ✅ >80% in all 30 library packages (re-measured 2026-08-19; `cmd/*` + `example/*` mains exempt) |
 | Zero CGO | ✅ Maintained |
+| Lint | ✅ `golangci-lint` 0 issues (Phase 32, 2026-08-19) |
 | LLM Backends | OpenAI, Ollama (Mock) |
 | Embedding Providers | OpenAI, Cohere, Ollama, ONNX (local), Mock |
 | Fusion Methods | WeightedFusion, RRF |
@@ -539,39 +540,43 @@ there.
 
 ## Phase 32: Project Hygiene & Documentation
 
+**Status: ✅ Complete (2026-08-19)**
+
 **Goal:** Improve project infrastructure and documentation.
 
 ### 32.1 Documentation
-- [ ] `CHANGELOG.md` — version history
-- [ ] `CONTRIBUTING.md` — contribution guidelines
-- [ ] `SECURITY.md` — security policy and reporting
-- [ ] `CODE_OF_CONDUCT.md` — community standards
-- [ ] `ARCHITECTURE.md` — detailed architecture decisions
-- [ ] `GOVERNANCE.md` — project governance
-- [ ] Per-package README files
-- [ ] Migration guide for version upgrades
+- [x] `CHANGELOG.md` — version history
+- [x] `CONTRIBUTING.md` — contribution guidelines
+- [x] `SECURITY.md` — security policy and reporting
+- [x] `CODE_OF_CONDUCT.md` — community standards
+- [x] `ARCHITECTURE.md` — detailed architecture decisions
+- [x] `GOVERNANCE.md` — project governance
+- [x] Per-package README files (all 32 packages, incl. `cmd/*`)
+- [x] Migration guide for version upgrades (`docs/MIGRATION.md`)
 
 ### 32.2 CI/CD
-- [ ] GitHub Actions workflow
-  - [ ] Lint (`golangci-lint`)
-  - [ ] Test (`go test -cover`)
-  - [ ] Build verification
-  - [ ] Coverage threshold enforcement
-  - [ ] Benchmark regression detection
-- [ ] Semantic versioning with automated tagging
-- [ ] Automated release notes generation
+- [x] GitHub Actions workflow (`.github/workflows/go.yml`)
+  - [x] Lint (`golangci-lint`, pinned version)
+  - [x] Test (`go test -cover`, overall ≥80% coverage gate)
+  - [x] Build verification
+  - [x] Coverage threshold enforcement
+  - [x] Benchmark regression detection (`scripts/benchcompare.sh` baseline gate)
+  - [x] Dependency vulnerability scanning (`govulncheck`)
+  - [x] License compliance checking
+- [x] Semantic versioning with automated tagging (`.github/workflows/tag.yml`)
+- [x] Automated release notes generation (`.github/workflows/release.yml` + `scripts/release-build.sh` cross-platform binaries)
 
 ### 32.3 Code Quality
-- [ ] `golangci-lint` configuration
-- [ ] Static analysis (staticcheck, revive)
-- [ ] Dependency vulnerability scanning
-- [ ] License compliance checking
+- [x] `golangci-lint` configuration (`.golangci.yml`, schema v2: errcheck/govet/ineffassign/staticcheck/unused + gosec, misspell, revive, unconvert; curated exclusions documented inline)
+- [x] Static analysis (staticcheck, revive) — **0 issues repo-wide**
+- [x] Dependency vulnerability scanning (`govulncheck` in CI)
+- [x] License compliance checking (CI)
 
 ### 32.4 Examples Enhancement
-- [ ] More comprehensive examples in `example/`
-- [ ] End-to-end tutorial (ingest → search → RAG → evaluate)
-- [ ] Production deployment example
-- [ ] Benchmark comparison guide
+- [x] More comprehensive examples in `example/`
+- [x] End-to-end tutorial (`example/e2e`: ingest → search → RAG → evaluate → reasoning)
+- [x] Production deployment example (`example/production`: `app.BuildAPIServer` + typed `client`)
+- [x] Benchmark comparison guide (`docs/BENCHMARKS.md` + `scripts/benchcompare.sh`)
 
 **Estimated Effort:** 2–3 weeks
 **Priority:** Medium
@@ -599,5 +604,5 @@ Priority 1 (Foundation)          Priority 2 (Production)        Priority 3 (Grow
 
 ### Quick Wins (can be done in parallel, ~2 weeks each):
 1. ~~**Test coverage hardening** (Phase 19)~~ — ✅ done 2026-08-18 (all 14 packages ≥80%)
-2. **Project hygiene** (Phase 32) — improves developer experience
+2. ~~**Project hygiene** (Phase 32)~~ — ✅ done 2026-08-19 (lint at 0 issues, CI/release workflows, governance + per-package docs, e2e/production examples)
 3. ~~**CLI tool** (Phase 29)~~ — ✅ done 2026-08-19 (`cmd/recall`: local + server modes, all data/store/cluster/eval commands)

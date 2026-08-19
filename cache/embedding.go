@@ -20,7 +20,7 @@ func NewEmbeddingCache(maxSize int) *EmbeddingCache {
 	}
 }
 
-// GenerateKey generates a cache key for an embedding input.
+// GenerateEmbeddingKey generates a cache key for an embedding input.
 func GenerateEmbeddingKey(text string) string {
 	hash := sha256.Sum256([]byte(text))
 	return fmt.Sprintf("emb:%x", hash[:8])

@@ -128,10 +128,7 @@ func (c *OllamaClient) convertRequest(req *ChatRequest) OllamaChatRequest {
 	}
 
 	for _, msg := range req.Messages {
-		ollamaReq.Messages = append(ollamaReq.Messages, OllamaMessage{
-			Role:    msg.Role,
-			Content: msg.Content,
-		})
+		ollamaReq.Messages = append(ollamaReq.Messages, OllamaMessage(msg))
 	}
 
 	if req.Temperature > 0 {
@@ -148,10 +145,7 @@ func (c *OllamaClient) convertResponse(resp *OllamaChatResponse) *ChatResponse {
 	msg := resp.Message
 
 	return &ChatResponse{
-		Message: Message{
-			Role:    msg.Role,
-			Content: msg.Content,
-		},
+		Message: Message(msg),
 		Usage: Usage{
 			PromptTokens:     resp.PromptEvalCount,
 			CompletionTokens: resp.EvalCount,

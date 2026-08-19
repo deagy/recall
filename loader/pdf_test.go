@@ -31,14 +31,14 @@ func writeTempPDF(t *testing.T, pages ...string) string {
 	offsets := make([]int, total+1) // 1-based
 	obj := func(num int, content []byte) {
 		offsets[num] = body.Len()
-		body.WriteString(fmt.Sprintf("%d 0 obj\n", num))
+		fmt.Fprintf(&body, "%d 0 obj\n", num)
 		body.Write(content)
 		body.WriteString("\nendobj\n")
 	}
 	obj(1, []byte("<< /Type /Catalog /Pages 2 0 R >>"))
 	var kids strings.Builder
 	for i := 0; i < n; i++ {
-		kids.WriteString(fmt.Sprintf("%d 0 R ", 4+2*i))
+		fmt.Fprintf(&kids, "%d 0 R ", 4+2*i)
 	}
 	obj(2, []byte(fmt.Sprintf("<< /Type /Pages /Kids [%s] /Count %d >>", kids.String(), n)))
 	obj(3, []byte("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"))
@@ -51,12 +51,12 @@ func writeTempPDF(t *testing.T, pages ...string) string {
 		obj(contentNum, []byte(fmt.Sprintf("<< /Length %d >>\nstream\n%s\nendstream", len(stream), stream)))
 	}
 	xrefOff := body.Len()
-	body.WriteString(fmt.Sprintf("xref\n0 %d\n", total+1))
+	fmt.Fprintf(&body, "xref\n0 %d\n", total+1)
 	body.WriteString("0000000000 65535 f \n")
 	for i := 1; i <= total; i++ {
-		body.WriteString(fmt.Sprintf("%010d 00000 n \n", offsets[i]))
+		fmt.Fprintf(&body, "%010d 00000 n \n", offsets[i])
 	}
-	body.WriteString(fmt.Sprintf("trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n", total+1, xrefOff))
+	fmt.Fprintf(&body, "trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n", total+1, xrefOff)
 
 	p := filepath.Join(t.TempDir(), "doc.pdf")
 	if err := os.WriteFile(p, body.Bytes(), 0o600); err != nil {

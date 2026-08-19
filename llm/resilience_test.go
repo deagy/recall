@@ -368,7 +368,7 @@ func TestCircuitBreaker_Stream(t *testing.T) {
 func TestRateLimit_AllowsBurstThenWaits(t *testing.T) {
 	inner := newScripted()
 	rl := NewRateLimitBackend(inner, RateLimitConfig{Capacity: 2, RefillRate: 100})
-	var now time.Time = time.Now()
+	now := time.Now()
 	rl.now = func() time.Time { return now }
 	var slept time.Duration
 	rl.sleep = func(ctx context.Context, d time.Duration) error {
@@ -399,7 +399,7 @@ func TestRateLimit_AllowsBurstThenWaits(t *testing.T) {
 func TestRateLimit_RefillsOverTime(t *testing.T) {
 	inner := newScripted()
 	rl := NewRateLimitBackend(inner, RateLimitConfig{Capacity: 1, RefillRate: 10})
-	var now time.Time = time.Now()
+	now := time.Now()
 	rl.now = func() time.Time { return now }
 	rl.sleep = func(ctx context.Context, d time.Duration) error { now = now.Add(d); return nil }
 	ctx := context.Background()

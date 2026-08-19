@@ -30,7 +30,7 @@ func NewQueryCache(maxSize int) *QueryCache {
 	}
 }
 
-// GenerateKey generates a cache key for a query and its filters.
+// GenerateQueryKey generates a cache key for a query and its filters.
 func GenerateQueryKey(query string, filters map[string]interface{}) string {
 	// Create a canonical representation of the query and filters
 	var parts []string

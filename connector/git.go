@@ -52,6 +52,7 @@ func (g *GitConnector) Fetch(ctx context.Context, ref string) ([]*loader.Documen
 	}
 	args = append(args, g.ExtraArgs...)
 	args = append(args, "--", ref, tmp)
+	//nolint:gosec // G204: exec.Command does not invoke a shell; bin is the git executable and ref is protected by the "--" separator from option injection
 	cmd := exec.CommandContext(ctx, bin, args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return nil, fmt.Errorf("git clone %s: %w: %s", ref, err, out)

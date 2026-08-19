@@ -170,9 +170,6 @@ func (o *globalOptions) loadConfig() (*config.Config, error) {
 	return cfg, nil
 }
 
-// local reports whether the command runs in local (in-process) mode.
-func (o *globalOptions) local() bool { return o.cli == nil }
-
 // requireLocal rejects commands that only work in-process.
 func (o *globalOptions) requireLocal(name string) error {
 	if o.cli != nil {

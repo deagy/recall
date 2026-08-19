@@ -76,6 +76,7 @@ func (s *SQLiteStore) Backup(ctx context.Context, destPath string) error {
 	if destPath == "" {
 		return fmt.Errorf("store: backup destination path is required")
 	}
+	//nolint:gosec // G202: destPath is embedded as a quoted SQL literal (quoteSQLLiteral escapes it); VACUUM INTO has no parameterized form
 	if _, err := s.db.ExecContext(ctx, `VACUUM INTO `+quoteSQLLiteral(destPath)); err != nil {
 		return fmt.Errorf("backup: %w", err)
 	}
@@ -98,6 +99,7 @@ func RestoreSQLite(srcPath, destPath string) error {
 		return fmt.Errorf("reading backup %q: %w", srcPath, err)
 	}
 	tmp := destPath + ".restore-tmp"
+	//nolint:gosec // G703: destPath is the caller-specified restore destination (public API contract); written to a temp file and atomically renamed
 	if err := os.WriteFile(tmp, data, 0o644); err != nil {
 		return fmt.Errorf("writing restore temp file: %w", err)
 	}

@@ -129,7 +129,9 @@ func (s *SQLiteGraphStore) LoadFromDB() error {
 		}
 		props := make(map[string]string)
 		if propsJSON != "" {
-			json.Unmarshal([]byte(propsJSON), &props)
+			if err := json.Unmarshal([]byte(propsJSON), &props); err != nil {
+				return fmt.Errorf("parsing properties for entity %s: %w", id, err)
+			}
 		}
 		s.graph.AddEntity(&graph.Entity{
 			ID:         id,
@@ -155,7 +157,9 @@ func (s *SQLiteGraphStore) LoadFromDB() error {
 		}
 		props := make(map[string]string)
 		if propsJSON != "" {
-			json.Unmarshal([]byte(propsJSON), &props)
+			if err := json.Unmarshal([]byte(propsJSON), &props); err != nil {
+				return fmt.Errorf("parsing properties for relation %s -> %s: %w", fromID, toID, err)
+			}
 		}
 		s.graph.AddRelation(&graph.Relation{
 			From:       fromID,

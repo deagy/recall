@@ -144,7 +144,7 @@ func (w *WebConnector) wait(ctx context.Context) error {
 	if !start.After(time.Now()) {
 		return nil
 	}
-	timer := time.NewTimer(start.Sub(time.Now()))
+	timer := time.NewTimer(time.Until(start))
 	defer timer.Stop()
 	select {
 	case <-ctx.Done():
