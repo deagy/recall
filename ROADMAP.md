@@ -207,10 +207,11 @@ there.
 - [x] `metrics.InstrumentedStore` — drop-in `store.Store` wrapper that records store metrics + structured logs
 
 ### 23.2 Tracing
-- [ ] OpenTelemetry integration
-- [ ] Distributed trace spans for search, embedding, chunking
-- [ ] Store-level tracing (upload → search → retrieve)
-- [ ] Span tags for metadata (namespace, document ID, query type)
+- [x] OpenTelemetry-compatible tracing (128-bit trace / 64-bit span IDs, span kinds, attributes, status; `SpanProcessor` is the bridge to an OTel collector — the heavy OTel SDK is intentionally not bundled to preserve zero-dependency/zero-CGO)
+- [x] W3C `traceparent` inject/parse + `StartRemoteSpan` for distributed (cross-node) trace correlation
+- [x] Trace spans for store operations (search, hybrid search, upload) with metadata span tags (namespace, document ID, query, query type, top-k, result count)
+- [x] Store-level tracing: `InstrumentedTracingStore` records the upload → search → retrieve path as parent/child spans
+- [x] Pluggable `SpanProcessor`s: `InMemoryProcessor` (grouped by trace) and `ConsoleProcessor`
 
 ### 23.3 Health & Diagnostics
 - [ ] `store.HealthCheck()` — connectivity, index integrity
