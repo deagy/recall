@@ -39,6 +39,17 @@ jobs:
     - name: Test
       run: go test ./... -count=1 -race
 
+    # Coverage regression gate: overall statement coverage must stay >= 80%.
+    - name: Coverage gate (>= 80%)
+      run: |
+        go test ./... -count=1 -coverprofile=coverage.out -covermode=atomic
+        total=$(go tool cover -func=coverage.out | awk '/^total:/ {print $3}' | tr -d '%')
+        echo "overall coverage: ${total}%"
+        if awk "BEGIN {exit !($total < 80)}"; then
+          echo "::error::overall coverage ${total}% is below the 80% gate"
+          exit 1
+        fi
+
     # Smoke-run every benchmark once; CI does not assert benchmark numbers.
     - name: Bench
       run: go test ./... -run=^$ -bench=. -benchtime=1x -count=1

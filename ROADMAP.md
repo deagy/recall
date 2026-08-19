@@ -255,10 +255,13 @@ there.
 - [ ] Web UI for annotation (optional, Phase 30)
 
 ### 24.4 Automated Testing
-- [ ] `testutil.FixtureStore` — in-memory store with preloaded data
-- [ ] `testutil.MockLLM` — deterministic LLM responses for testing
-- [ ] `testutil.GoldenFile` — compare results against golden files
-- [ ] CI integration for regression testing
+- [x] `testutil.FixtureStore` — in-memory store with preloaded data (deterministic mock embedder, predictable chunk IDs, single-chunk chunking)
+- [x] `testutil.MockLLM` — deterministic LLM responses for testing (scripted `llm.Backend`: ordered responses, last-one-repeat, streaming, call tracking)
+- [x] `testutil.GoldenFile` — compare results against golden files (`Golden`/`GoldenJSON` with an `UpdateGolden` refresh mode, `GoldenDiff`)
+- [x] `testutil.MockEmbedder` — deterministic test embedder (re-export of `embedder.MockEmbedder` + `DeterministicEmbed`)
+- [x] `testutil.BenchmarkHarness` — benchmarking wrapper (warmup + correct `ResetTimer`/`StopTimer` handling, error propagation)
+- [x] CI integration for regression testing — existing workflow (vet, `gofmt -s`, build, `-race` tests, benchmark smoke) plus a new overall-coverage gate (≥ 80%)
+- [x] Fixed pre-existing data race in `ingest.Pipeline.process` (unlocked `Result.Skipped++`/`Result.Uploaded++` in the worker pool)
 
 **Estimated Effort:** 3–4 weeks
 **Priority:** Medium

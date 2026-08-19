@@ -126,6 +126,18 @@ func (p *Pipeline) process(ctx context.Context, docs []*loader.Document, prog *P
 		mu.Unlock()
 		prog.Fail(id)
 	}
+	skip := func(id string) {
+		mu.Lock()
+		result.Skipped++
+		mu.Unlock()
+		prog.Skip(id)
+	}
+	uploaded := func(id string) {
+		mu.Lock()
+		result.Uploaded++
+		mu.Unlock()
+		prog.Upload(id)
+	}
 
 	work := func(d *loader.Document) {
 		if ctx.Err() != nil {
@@ -135,22 +147,19 @@ func (p *Pipeline) process(ctx context.Context, docs []*loader.Document, prog *P
 		// Incremental: skip unchanged documents.
 		if p.opts.Incremental != nil {
 			if h := ContentHash(d.Content); p.opts.Incremental.ShouldSkip(d.ID, h) {
-				prog.Skip(d.ID)
-				result.Skipped++
+				skip(d.ID)
 				return
 			}
 		}
 		// Dedup: skip content already ingested.
 		if p.opts.Dedup != nil && p.opts.Dedup.IsDuplicate(d.Content) {
-			prog.Skip(d.ID)
-			result.Skipped++
+			skip(d.ID)
 			return
 		}
 		// Validation: reject documents that violate the schema.
 		if p.opts.Validator != nil {
 			if verr := p.opts.Validator.Validate(d); verr != nil {
-				prog.Skip(d.ID)
-				result.Skipped++
+				skip(d.ID)
 				return
 			}
 		}
@@ -164,8 +173,7 @@ func (p *Pipeline) process(ctx context.Context, docs []*loader.Document, prog *P
 				return
 			}
 			if doc == nil {
-				prog.Skip(d.ID)
-				result.Skipped++
+				skip(d.ID)
 				return
 			}
 		}
@@ -174,8 +182,7 @@ func (p *Pipeline) process(ctx context.Context, docs []*loader.Document, prog *P
 			fail(doc.ID, err)
 			return
 		}
-		prog.Upload(doc.ID)
-		result.Uploaded++
+		uploaded(doc.ID)
 		if p.opts.Dedup != nil {
 			p.opts.Dedup.Mark(doc.Content)
 		}
