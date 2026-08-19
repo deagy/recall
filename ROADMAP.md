@@ -264,7 +264,7 @@ there.
 
 ## Phase 25: Resilience & Reliability
 
-**Status: 🔄 In Progress** — 25.1 LLM Backend Resilience and 25.2 Store Resilience complete; 25.3–25.4 pending.
+**Status: 🔄 In Progress** — 25.1 LLM, 25.2 Store, and 25.3 Distributed Resilience complete; 25.4 (Context Management) pending.
 
 **Goal:** Add production reliability features.
 
@@ -282,10 +282,10 @@ there.
 - [x] `store.CorruptionDetection` — detect and repair corrupted data (`SQLiteStore.IntegrityCheck` via `integrity_check` + `foreign_key_check`, `Repair` rebuilds the FTS index)
 
 ### 25.3 Distributed Resilience
-- [ ] `distributed.NodeHealth` — periodic health checks
-- [ ] `distributed.AutoRebalance` — automatic shard rebalancing
-- [ ] `distributed.FaultTolerance` — operate with degraded nodes
-- [ ] `distributed.Consensus` — leader election for writes
+- [x] `distributed.NodeHealth` — periodic health checks (`NodeHealth` background prober; marks nodes offline after N consecutive failed probes, recovers on success)
+- [x] `distributed.AutoRebalance` — automatic shard rebalancing (`AutoRebalancer` rebuilds the ring via `Cluster.RebalanceActive` when the active node set changes)
+- [x] `distributed.FaultTolerance` — operate with degraded nodes (`Cluster.Health()` healthy/degraded/down summary, `Quorum`/`QuorumMet`, `ReplicateOp` quorum-based write replication)
+- [x] `distributed.Consensus` — leader election for writes (`Consensus` deterministic leader among online nodes with a monotonically increasing `Term`)
 
 ### 25.4 Context Management
 - [ ] `pipeline.SmartContextWindow` — priority-based chunk inclusion

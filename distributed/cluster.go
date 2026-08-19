@@ -290,3 +290,66 @@ func (c *Cluster) GetNodeForChunk(chunkID string) string {
 	}
 	return c.virtualNodes[c.hashRing[pos]]
 }
+
+// SetNodeStatus updates a node's status ("online", "degraded", "offline").
+// It is the thread-safe way for health monitors to reflect node availability
+// without corrupting the shared Node state.
+func (c *Cluster) SetNodeStatus(nodeID, status string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	node, ok := c.nodes[nodeID]
+	if !ok {
+		return fmt.Errorf("node %s not found", nodeID)
+	}
+	node.Status = status
+	return nil
+}
+
+// ActiveNodeIDs returns the sorted IDs of nodes that are not offline
+// (i.e. "online" or "degraded"), which are the nodes eligible to hold and
+// serve data.
+func (c *Cluster) ActiveNodeIDs() []string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	ids := make([]string, 0, len(c.nodes))
+	for id, node := range c.nodes {
+		if node.Status != "offline" {
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+// RebalanceActive rebuilds the hash ring from the set of active (non-offline)
+// nodes only, so routing automatically skips failed nodes. It is idempotent.
+func (c *Cluster) RebalanceActive(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	vn := make(map[uint64]string)
+	for id, node := range c.nodes {
+		if node.Status == "offline" {
+			continue
+		}
+		for i := 0; i < c.config.ConsistentHashingVirtualNodes; i++ {
+			hash := c.hashKey(fmt.Sprintf("%s:%d", id, i))
+			vn[hash] = id
+		}
+	}
+	ring := make([]uint64, 0, len(vn))
+	for hash := range vn {
+		ring = append(ring, hash)
+	}
+	sort.Slice(ring, func(i, j int) bool { return ring[i] < ring[j] })
+
+	c.virtualNodes = vn
+	c.hashRing = ring
+	return nil
+}

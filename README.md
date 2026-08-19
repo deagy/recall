@@ -531,6 +531,7 @@ recall/
 - [x] Phase 22.3: Learning-to-Rank — `reranker.AdaptiveLTRanker` for feedback-driven reranker adaptation (labeled feedback buffers and auto-refits at a configurable threshold, thread-safe) and `reranker.Experiment` A/B testing framework (per-variant NDCG@K / MRR@K / Precision@K, pairwise win rate, Welch t-test with p-value)
 - [x] Phase 25.1: LLM Backend Resilience — composable decorators around `llm.Backend`: `RetryBackend` (exponential backoff + jitter, pluggable retryable predicate), `CircuitBreakerBackend` (closed/open/half-open with cooldown + single probe), `RateLimitBackend` (token-bucket, blocking, context-aware), `FallbackBackend` (ordered failover), and `Middleware` (chains any of them via `MiddlewareFunc`)
 - [x] Phase 25.2: Store Resilience — production reliability for the SQLite store: `Checkpoint`/`StartAutoCheckpoint` (WAL), `Backup` (online `VACUUM INTO`) + `RestoreSQLite`, schema `Migration`/`Migrator` (versioned, transactional, auto-applied), and `IntegrityCheck`/`Repair` (corruption detection + FTS rebuild), exposed via the `ResilientStore` interface
+- [x] Phase 25.3: Distributed Resilience — `NodeHealth` (periodic probing, offline/recovery), `AutoRebalancer` (ring tracks active nodes via `Cluster.RebalanceActive`), fault tolerance (`Cluster.Health()` healthy/degraded/down, `Quorum`/`ReplicateOp` quorum writes), and `Consensus` (deterministic leader election with a leadership `Term`)
 
 ## Roadmap
 
