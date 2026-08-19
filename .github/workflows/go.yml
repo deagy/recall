@@ -97,8 +97,16 @@ jobs:
 
       # License compliance: all direct and indirect dependency licenses must
       # be permissive (default allowlist: MIT, Apache-2.0, BSD-*, ISC, ...).
+      #
+      # Exclusion (verified 2026-08-19): modernc.org/mathutil ships a
+      # BSD-3-Clause LICENSE file that go-licenses' content classifier
+      # fails to recognize (its wording omits the standard "The BSD
+      # License" heading), so the check reports "Unknown license type"
+      # for this transitive dependency of modernc.org/sqlite.
       - name: License check
-        run: go run github.com/google/go-licenses@latest check ./...
+        run: |
+          go run github.com/google/go-licenses@latest check \
+            --ignore modernc.org/mathutil ./...
 
   benchmark:
     name: Benchmark Regression Check
