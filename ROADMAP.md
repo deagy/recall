@@ -264,14 +264,16 @@ there.
 
 ## Phase 25: Resilience & Reliability
 
+**Status: 🔄 In Progress** — 25.1 LLM Backend Resilience complete (Retry/CircuitBreaker/RateLimit/Fallback/Middleware); 25.2–25.4 pending.
+
 **Goal:** Add production reliability features.
 
 ### 25.1 LLM Backend Resilience
-- [ ] `llm.RetryBackend` — retry with exponential backoff
-- [ ] `llm.CircuitBreakerBackend` — trip on failure threshold
-- [ ] `llm.RateLimitBackend` — token bucket rate limiting
-- [ ] `llm.FallbackBackend` — fallback to secondary provider
-- [ ] `llm.Middleware` — chain backends with interceptors
+- [x] `llm.RetryBackend` — retry with exponential backoff (+ jitter, pluggable retryable predicate, context-aware)
+- [x] `llm.CircuitBreakerBackend` — trip on failure threshold (closed/open/half-open, cooldown + single probe, `State()`)
+- [x] `llm.RateLimitBackend` — token bucket rate limiting (capacity + refill rate, blocking acquire, context-aware)
+- [x] `llm.FallbackBackend` — fallback to secondary provider (ordered failover, aggregates last error)
+- [x] `llm.Middleware` — chain backends with interceptors (`MiddlewareFunc` composer + `RetryMiddleware`/`CircuitBreakerMiddleware`/`RateLimitMiddleware`/`FallbackMiddleware`)
 
 ### 25.2 Store Resilience
 - [ ] `store.Checkpoint` — periodic SQLite WAL checkpoints
