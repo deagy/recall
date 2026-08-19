@@ -39,6 +39,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # Idempotent: if a release for this tag already exists (e.g. the
+          # tag was force-moved onto a fixed commit), replace its assets
+          # and notes. The tag itself is left untouched.
+          gh release delete "$GITHUB_REF_NAME" --yes 2>/dev/null || true
           gh release create "$GITHUB_REF_NAME" \
             --title "$GITHUB_REF_NAME" \
             --generate-notes \
