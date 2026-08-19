@@ -264,7 +264,7 @@ there.
 
 ## Phase 25: Resilience & Reliability
 
-**Status: 🔄 In Progress** — 25.1 LLM Backend Resilience complete (Retry/CircuitBreaker/RateLimit/Fallback/Middleware); 25.2–25.4 pending.
+**Status: 🔄 In Progress** — 25.1 LLM Backend Resilience and 25.2 Store Resilience complete; 25.3–25.4 pending.
 
 **Goal:** Add production reliability features.
 
@@ -276,10 +276,10 @@ there.
 - [x] `llm.Middleware` — chain backends with interceptors (`MiddlewareFunc` composer + `RetryMiddleware`/`CircuitBreakerMiddleware`/`RateLimitMiddleware`/`FallbackMiddleware`)
 
 ### 25.2 Store Resilience
-- [ ] `store.Checkpoint` — periodic SQLite WAL checkpoints
-- [ ] `store.Backup` — point-in-time backup and restore
-- [ ] `store.Migration` — schema versioning and automatic migration
-- [ ] `store.CorruptionDetection` — detect and repair corrupted data
+- [x] `store.Checkpoint` — periodic SQLite WAL checkpoints (`SQLiteStore.Checkpoint` with PASSIVE/FULL/TRUNCATE/RESTART + `StartAutoCheckpoint` background loop stopped on `Close`)
+- [x] `store.Backup` — point-in-time backup and restore (`SQLiteStore.Backup` via online `VACUUM INTO` + `RestoreSQLite` atomic file restore)
+- [x] `store.Migration` — schema versioning and automatic migration (`Migration` + `Migrator` tracked via `PRAGMA user_version` + `schema_migrations`, transactional, auto-applied from `Config.Migrations`)
+- [x] `store.CorruptionDetection` — detect and repair corrupted data (`SQLiteStore.IntegrityCheck` via `integrity_check` + `foreign_key_check`, `Repair` rebuilds the FTS index)
 
 ### 25.3 Distributed Resilience
 - [ ] `distributed.NodeHealth` — periodic health checks

@@ -22,6 +22,11 @@ type Config struct {
 
 	// ChunkerFactory creates chunkers for document splitting.
 	ChunkerFactory chunker.Factory
+
+	// Migrations are schema changes applied automatically (for SQLite stores)
+	// after the base schema is created, in ascending Version order. Use this to
+	// evolve the schema over time; see store.Migration and store.Migrator.
+	Migrations []Migration
 }
 
 // Store defines the interface for the knowledge store.

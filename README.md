@@ -530,6 +530,7 @@ recall/
 - [x] Phase 22: Reranking — `reranker` package (cross-encoder on the pure-Go ONNX runtime, BM25 sparse re-scoring, LLM-as-judge, ensemble fusion, pointwise learning-to-rank) wired into `pipeline.RAGPipeline` as an optional two-stage coarse→fine stage via `WithReranker`/`WithCoarseTopK`/`WithRerankTopK`, with rerank score attribution on `SearchResult`
 - [x] Phase 22.3: Learning-to-Rank — `reranker.AdaptiveLTRanker` for feedback-driven reranker adaptation (labeled feedback buffers and auto-refits at a configurable threshold, thread-safe) and `reranker.Experiment` A/B testing framework (per-variant NDCG@K / MRR@K / Precision@K, pairwise win rate, Welch t-test with p-value)
 - [x] Phase 25.1: LLM Backend Resilience — composable decorators around `llm.Backend`: `RetryBackend` (exponential backoff + jitter, pluggable retryable predicate), `CircuitBreakerBackend` (closed/open/half-open with cooldown + single probe), `RateLimitBackend` (token-bucket, blocking, context-aware), `FallbackBackend` (ordered failover), and `Middleware` (chains any of them via `MiddlewareFunc`)
+- [x] Phase 25.2: Store Resilience — production reliability for the SQLite store: `Checkpoint`/`StartAutoCheckpoint` (WAL), `Backup` (online `VACUUM INTO`) + `RestoreSQLite`, schema `Migration`/`Migrator` (versioned, transactional, auto-applied), and `IntegrityCheck`/`Repair` (corruption detection + FTS rebuild), exposed via the `ResilientStore` interface
 
 ## Roadmap
 

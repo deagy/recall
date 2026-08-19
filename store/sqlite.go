@@ -30,6 +30,8 @@ type SQLiteStore struct {
 	db       *sql.DB
 	chunks   map[string]*core.Chunk // in-memory copy for HNSW
 	hnsw     *index.HNSW            // HNSW index for ANN search
+
+	autoCheckpointCancel context.CancelFunc // stops the background WAL checkpoint loop
 }
 
 // NewSQLiteStore creates a new SQLite-backed store.
@@ -75,7 +77,40 @@ func NewSQLiteStore(cfg Config, dbPath string) (*SQLiteStore, error) {
 		return nil, fmt.Errorf("creating schema: %w", err)
 	}
 
+	// Automatically apply any schema migrations supplied in the config.
+	// The base schema is always created first (createSchema), so migrations
+	// only need to evolve the schema for newer versions.
+	if len(cfg.Migrations) > 0 {
+		if err := NewMigrator(db, cfg.Migrations).Migrate(context.Background()); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("applying migrations: %w", err)
+		}
+	}
+
 	return s, nil
+}
+
+// Migrate applies any pending schema migrations from the store's config. It is
+// idempotent: already-applied migrations are skipped. Call it with your own
+// context when you need to control cancellation of long migrations.
+func (s *SQLiteStore) Migrate(ctx context.Context) error {
+	if len(s.config.Migrations) == 0 {
+		return nil
+	}
+	// Serialize migration runs so two concurrent callers cannot both attempt
+	// to apply the same version.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return NewMigrator(s.db, s.config.Migrations).Migrate(ctx)
+}
+
+// SchemaVersion returns the current schema version (PRAGMA user_version).
+func (s *SQLiteStore) SchemaVersion(ctx context.Context) (int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var v int
+	err := s.db.QueryRowContext(ctx, `PRAGMA user_version`).Scan(&v)
+	return v, err
 }
 
 func (s *SQLiteStore) createSchema() error {
@@ -617,6 +652,10 @@ func (s *SQLiteStore) Namespaces() []string {
 func (s *SQLiteStore) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.autoCheckpointCancel != nil {
+		s.autoCheckpointCancel()
+		s.autoCheckpointCancel = nil
+	}
 	return s.db.Close()
 }
 
