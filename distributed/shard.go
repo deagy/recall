@@ -104,6 +104,18 @@ func (sm *ShardManager) GetActiveShards() []*Shard {
 	return shards
 }
 
+// GetAllShards returns all shards regardless of status.
+func (sm *ShardManager) GetAllShards() []*Shard {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+
+	shards := make([]*Shard, 0, len(sm.shards))
+	for _, shard := range sm.shards {
+		shards = append(shards, shard)
+	}
+	return shards
+}
+
 // GetShardCount returns the number of shards.
 func (sm *ShardManager) GetShardCount() int {
 	sm.mu.RLock()

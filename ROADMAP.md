@@ -214,10 +214,10 @@ there.
 - [x] Pluggable `SpanProcessor`s: `InMemoryProcessor` (grouped by trace) and `ConsoleProcessor`
 
 ### 23.3 Health & Diagnostics
-- [ ] `store.HealthCheck()` — connectivity, index integrity
-- [ ] `store.IntegrityCheck()` — verify data consistency
-- [ ] `distributed.ClusterHealth()` — node status, shard distribution
-- [ ] Expose diagnostics via configurable endpoint or CLI
+- [x] `store.HealthCheck()` — connectivity probe, chunk count, namespaces, and (for SQLite) structural integrity; returns a `store.HealthReport`
+- [x] `store.IntegrityCheck()` — verify data consistency (added in Phase 25.2; surfaced by `HealthCheck`)
+- [x] `distributed.ClusterHealth()` — node status + overall operability (Phase 25.3), extended with `ShardStats`/`ShardDistribution` for per-node shard distribution
+- [x] Expose diagnostics via endpoint: `store.HealthHandler` and `distributed.HealthHandler` serve `/healthz` (200/503) and `/diagnostics` (JSON)
 
 ### 23.4 Query Analytics
 - [ ] `analytics.QueryLog` — log queries with latency and results
