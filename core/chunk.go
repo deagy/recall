@@ -63,3 +63,9 @@ func (c *Chunk) GetMetadataString(key string) string {
 	}
 	return v.String()
 }
+
+// MetadataKeyNamespace is the chunk metadata key under which stores record
+// the namespace a chunk was uploaded into (see store.MemoryStore and
+// store.SQLiteStore Upload). Services that enforce namespace-scoped
+// credentials (e.g. api.ScopedAPIKeyAuth) filter chunks by this key.
+const MetadataKeyNamespace = "namespace"

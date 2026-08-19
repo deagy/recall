@@ -31,6 +31,12 @@ store:
 auth:
   enabled: false
   api_keys: []
+  # Namespace-scoped API keys: each entry may only access its namespaces.
+  # Example:
+  # scoped_keys:
+  #   - key: "team-a-key"
+  #     namespaces: ["team-a"]
+  scoped_keys: []
   jwt_secret: ""
   jwt_issuer: ""
   jwt_audience: ""

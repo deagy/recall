@@ -41,6 +41,7 @@ type RAGPipeline struct {
 	rerankTopK       int
 	citations        bool
 	smartContext     bool
+	filters          []index.Filter
 }
 
 // NewRAGPipeline creates a new RAG pipeline with the given store and template.
@@ -96,6 +97,26 @@ func (p *RAGPipeline) WithSmartContext() *RAGPipeline {
 	return p
 }
 
+// WithSearchFilters appends metadata filters applied during retrieval: a
+// chunk must match every filter to be retrieved (see index.Filter). Use
+// Clone() first when configuring a shared pipeline for a single request, so
+// the shared instance is not mutated.
+func (p *RAGPipeline) WithSearchFilters(filters ...index.Filter) *RAGPipeline {
+	p.filters = append(append([]index.Filter(nil), p.filters...), filters...)
+	return p
+}
+
+// Clone returns a copy of the pipeline with an independent search-filter
+// slice. Use it to derive request-specific pipelines (e.g. with additional
+// filters) from a shared instance without data races.
+func (p *RAGPipeline) Clone() *RAGPipeline {
+	cp := *p
+	if p.filters != nil {
+		cp.filters = append([]index.Filter(nil), p.filters...)
+	}
+	return &cp
+}
+
 // Query performs a RAG query: retrieves relevant chunks and assembles a prompt.
 // When a reranker is configured, retrieval is two-stage: a coarse vector pass
 // pulls coarseTopK (or topK) candidates, then the reranker refines them.
@@ -128,6 +149,7 @@ func (p *RAGPipeline) retrieve(ctx context.Context, question string, hybrid bool
 
 	opts := index.DefaultSearchOptions(coarseK)
 	opts.MinScore = p.minScore
+	opts.Filters = append(opts.Filters, p.filters...)
 	if hybrid {
 		opts.Hybrid = true
 		opts.BM25Weight = 0.5

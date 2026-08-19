@@ -55,6 +55,12 @@ func NewEngine(g *graph.KnowledgeGraph, cfg Config) *Engine {
 	}
 }
 
+// Graph returns the knowledge graph this engine reasons over. It is nil when
+// the engine was created with a nil graph.
+func (e *Engine) Graph() *graph.KnowledgeGraph {
+	return e.graph
+}
+
 // InferredRelation represents a relation inferred through reasoning.
 type InferredRelation struct {
 	// From is the source entity ID.

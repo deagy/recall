@@ -29,6 +29,7 @@
   "auth": {
     "enabled": false,
     "api_keys": [],
+    "scoped_keys": [],
     "jwt_secret": "",
     "jwt_issuer": "",
     "jwt_audience": ""

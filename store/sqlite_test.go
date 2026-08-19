@@ -595,3 +595,93 @@ func TestSQLiteStore_DeleteDocument_AfterGetChunk(t *testing.T) {
 	_, ok = s.GetChunk("doc1::chunk-0")
 	assert.False(t, ok, "expected chunk to be deleted after document deletion")
 }
+
+// TestSQLiteStore_UploadStampsNamespaceMetadata verifies the namespace is
+// persisted on chunk metadata and survives a reload from disk.
+func TestSQLiteStore_UploadStampsNamespaceMetadata(t *testing.T) {
+	s := newTestSQLiteStore(t)
+	ctx := context.Background()
+
+	doc1 := core.NewDocument("doc-stamp", "Default", "source")
+	require.NoError(t, s.Upload(ctx, doc1, "Solar panels convert sunlight into electricity for off-grid cabins and remote homes."))
+	chunk, ok := s.GetChunk("doc-stamp::chunk-0")
+	require.True(t, ok, "expected default-namespace chunk to exist")
+	assert.Equal(t, "test", chunk.GetMetadataString(core.MetadataKeyNamespace),
+		"chunk must be stamped with the store's default namespace")
+
+	doc2 := core.NewDocument("doc-override", "Team", "source")
+	doc2.Namespace = "team-a"
+	require.NoError(t, s.Upload(ctx, doc2, "Quarterly performance review notes about the roadmap and staffing plan for next year."))
+	chunk2, ok := s.GetChunk("doc-override::chunk-0")
+	require.True(t, ok, "expected override-namespace chunk to exist")
+	assert.Equal(t, "team-a", chunk2.GetMetadataString(core.MetadataKeyNamespace),
+		"chunk must be stamped with the document's namespace")
+
+	// The Namespace getter reports the configured default.
+	assert.Equal(t, "test", s.Namespace(), "expected the store's default namespace")
+}
+
+// TestSQLiteStore_HybridSearchAppliesNamespaceFilter verifies a metadata
+// filter on the stamped namespace restricts hybrid search results, including
+// the keyword (FTS) leg.
+func TestSQLiteStore_HybridSearchAppliesNamespaceFilter(t *testing.T) {
+	s := newTestSQLiteStore(t)
+	ctx := context.Background()
+
+	require.NoError(t, s.Upload(ctx, core.NewDocument("doc-a", "A", "a"),
+		"Quarterly performance review notes about the roadmap and staffing plan for next year."))
+	docB := core.NewDocument("doc-b", "B", "b")
+	docB.Namespace = "team-b"
+	require.NoError(t, s.Upload(ctx, docB, "Submarines glide beneath the ocean surface carrying cargo to distant ports."))
+
+	// "cargo" is a keyword hit only in team-b; the unfiltered hybrid search
+	// must surface it.
+	unfiltered, err := s.SearchHybrid(ctx, "cargo", index.SearchOptions{TopK: 10, Hybrid: true, BM25Weight: 0.5})
+	require.NoError(t, err, "unfiltered hybrid search should not fail")
+	sawTeamB := false
+	for _, r := range unfiltered {
+		if r.Chunk.DocumentRef == "doc-b" {
+			sawTeamB = true
+		}
+	}
+	assert.True(t, sawTeamB, "unfiltered hybrid search should surface the team-b keyword hit")
+
+	// The same query restricted to the default namespace must exclude it.
+	opts := index.DefaultSearchOptions(10)
+	opts.Hybrid = true
+	opts.BM25Weight = 0.5
+	opts.Filters = []index.Filter{&index.TermInFilter{Key: core.MetadataKeyNamespace, Values: []string{"test"}}}
+	results, err := s.SearchHybrid(ctx, "cargo", opts)
+	require.NoError(t, err, "filtered hybrid search should not fail")
+	for _, r := range results {
+		assert.Equal(t, "test", r.Chunk.GetMetadataString(core.MetadataKeyNamespace),
+			"filtered hybrid result %q leaked outside the allowed namespace", r.Chunk.ID)
+	}
+}
+
+// TestSQLiteStore_LegacyMetadataUnwrap verifies rows written before the
+// primitive serialization (typed values as {"Value": ...} objects) are still
+// read back correctly.
+func TestSQLiteStore_LegacyMetadataUnwrap(t *testing.T) {
+	legacy := `{"source":{"Value":"old.txt"},"score":{"Value":4.5},"active":{"Value":true},"misc":{"Value":{"nested":"obj"}}}`
+	got := deserializeMetadata(legacy)
+
+	assert.Equal(t, core.String{Value: "old.txt"}, got["source"], "legacy string must unwrap")
+	assert.Equal(t, core.Number{Value: 4.5}, got["score"], "legacy number must unwrap")
+	assert.Equal(t, core.Boolean{Value: true}, got["active"], "legacy boolean must unwrap")
+	// Non-Value objects fall back to a string representation.
+	_, exists := got["misc"]
+	assert.True(t, exists, "unknown legacy object must still be present")
+
+	// New serialization emits primitives that read back to typed values.
+	data, err := serializeMetadata(map[string]core.Value{
+		"source": core.String{Value: "new.txt"},
+		"score":  core.Number{Value: 4.5},
+		"active": core.Boolean{Value: true},
+	})
+	require.NoError(t, err, "serialize should not fail")
+	round := deserializeMetadata(data.(string))
+	assert.Equal(t, core.String{Value: "new.txt"}, round["source"], "string must round-trip")
+	assert.Equal(t, core.Number{Value: 4.5}, round["score"], "number must round-trip")
+	assert.Equal(t, core.Boolean{Value: true}, round["active"], "boolean must round-trip")
+}

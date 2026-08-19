@@ -3,11 +3,14 @@ package pipeline
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/deagy/recall/core"
 	"github.com/deagy/recall/embedder"
 	"github.com/deagy/recall/index"
+	"github.com/deagy/recall/store"
+	"github.com/deagy/recall/testutil"
 )
 
 func TestContextWindow_AddAndLimit(t *testing.T) {
@@ -533,4 +536,129 @@ func TestRAGResponse_Struct(t *testing.T) {
 	if resp.Sources != nil {
 		t.Error("expected nil sources")
 	}
+}
+
+// newRAGFilterStore builds a memory store with one chunk per namespace so
+// retrieval filters can be observed through the pipeline.
+func newRAGFilterStore(t *testing.T) store.Store {
+	t.Helper()
+	s, err := store.NewMemoryStore(store.Config{Namespace: "default", Embedder: testutil.NewMockEmbedder(16)})
+	if err != nil {
+		t.Fatalf("NewMemoryStore: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	ctx := context.Background()
+	if err := s.Upload(ctx, core.NewDocument("doc-a", "A", "a"),
+		"Apples are crisp and sweet, picked from the orchard in the autumn season."); err != nil {
+		t.Fatalf("upload a: %v", err)
+	}
+	docB := core.NewDocument("doc-b", "B", "b")
+	docB.Namespace = "ns-b"
+	if err := s.Upload(ctx, docB, "Submarines glide beneath the ocean surface carrying cargo to distant ports."); err != nil {
+		t.Fatalf("upload b: %v", err)
+	}
+	return s
+}
+
+// TestRAGPipeline_WithSearchFilters verifies retrieval is restricted by the
+// configured metadata filters (e.g. a namespace scope).
+func TestRAGPipeline_WithSearchFilters(t *testing.T) {
+	s := newRAGFilterStore(t)
+	p := NewRAGPipeline(s, nil).WithTopK(5).
+		WithSearchFilters(&index.TermInFilter{Key: core.MetadataKeyNamespace, Values: []string{"ns-b"}})
+
+	resp, err := p.Query(context.Background(), "orchard ocean")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Sources) == 0 {
+		t.Fatal("expected sources from ns-b")
+	}
+	for _, src := range resp.Sources {
+		if ns := src.Chunk.GetMetadataString(core.MetadataKeyNamespace); ns != "ns-b" {
+			t.Errorf("filtered pipeline leaked source %q from namespace %q", src.Chunk.ID, ns)
+		}
+	}
+}
+
+// TestRAGPipeline_CloneIndependentFilters verifies Clone yields a pipeline
+// whose search filters are independent of the original, so a shared pipeline
+// can be reconfigured per request without data races or cross-talk.
+func TestRAGPipeline_CloneIndependentFilters(t *testing.T) {
+	s := newRAGFilterStore(t)
+	base := NewRAGPipeline(s, nil).WithTopK(5)
+
+	scoped := base.Clone().WithSearchFilters(&index.TermFilter{Key: core.MetadataKeyNamespace, Value: "ns-b"})
+
+	// The clone retrieves only ns-b.
+	resp, err := scoped.Query(context.Background(), "orchard ocean")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Sources) == 0 {
+		t.Fatal("expected sources from ns-b via clone")
+	}
+	for _, src := range resp.Sources {
+		if ns := src.Chunk.GetMetadataString(core.MetadataKeyNamespace); ns != "ns-b" {
+			t.Errorf("clone leaked source %q from namespace %q", src.Chunk.ID, ns)
+		}
+	}
+
+	// The base is still unrestricted: no filter was copied into the clone
+	// or out of it.
+	baseResp, err := base.Query(context.Background(), "orchard ocean")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(baseResp.Sources) == 0 {
+		t.Fatal("unfiltered base pipeline should retrieve sources")
+	}
+
+	// Reconfiguring the base afterwards must not affect the clone
+	// (filter slices are copied, not aliased).
+	base.WithSearchFilters(&index.TermFilter{Key: core.MetadataKeyNamespace, Value: "default"})
+	afterResp, err := scoped.Query(context.Background(), "orchard ocean")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, src := range afterResp.Sources {
+		if ns := src.Chunk.GetMetadataString(core.MetadataKeyNamespace); ns != "ns-b" {
+			t.Errorf("clone was affected by later base reconfiguration: source %q from %q", src.Chunk.ID, ns)
+		}
+	}
+	baseAfter, err := base.Query(context.Background(), "orchard ocean")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, src := range baseAfter.Sources {
+		if ns := src.Chunk.GetMetadataString(core.MetadataKeyNamespace); ns != "default" {
+			t.Errorf("base pipeline did not pick up its own new filter: source %q from %q", src.Chunk.ID, ns)
+		}
+	}
+}
+
+// TestRAGPipeline_ConcurrentCloneUsage exercises shared + cloned pipelines
+// concurrently; run with -race to catch filter-slice aliasing.
+func TestRAGPipeline_ConcurrentCloneUsage(t *testing.T) {
+	s := newRAGFilterStore(t)
+	base := NewRAGPipeline(s, nil).WithTopK(3)
+	ctx := context.Background()
+	filterA := &index.TermInFilter{Key: core.MetadataKeyNamespace, Values: []string{"ns-b"}}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 16; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := base.Query(ctx, "orchard ocean"); err != nil {
+				t.Error(err)
+				return
+			}
+			cloned := base.Clone().WithSearchFilters(filterA)
+			if _, err := cloned.Query(ctx, "orchard ocean"); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
 }

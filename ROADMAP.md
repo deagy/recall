@@ -408,33 +408,41 @@ there.
 
 **Goal:** Add security features for multi-tenant deployments.
 
+> **Status (2026-08-18): partially complete.** The service auth primitives
+> (28.1 API keys + JWT) shipped in Phase 27.1, and **namespace-scoped API
+> keys** (28.1 namespace-level isolation) plus the README "Security
+> Guidance" section shipped on 2026-08-18. Remaining items are **deferred
+> until Recall is used as a multi-tenant hosted service** — for library and
+> single-tenant service use, the operational guidance in the README is
+> sufficient.
+
 ### 28.1 Authentication & Authorization
-- [ ] API key authentication
-- [ ] JWT token validation
-- [ ] Role-based access control (RBAC)
-- [ ] Namespace-level isolation enforcement
-- [ ] Row-level security for metadata filters
+- [x] API key authentication (Phase 27.1: `api.NewAPIKeyAuth`, `X-API-Key`/Bearer)
+- [x] JWT token validation (Phase 27.1: `api.NewJWTAuth`, HS256 via stdlib `crypto/hmac`)
+- [ ] Role-based access control (RBAC) — deferred (multi-tenant)
+- [x] Namespace-level isolation enforcement — **namespace-scoped API keys** (`api.ScopedAPIKeyAuth`, `auth.scoped_keys`): per-key namespace restrictions on uploads, search, RAG, and graph/reasoning endpoints, fail closed (2026-08-18)
+- [ ] Row-level security for metadata filters — deferred (multi-tenant)
 
 ### 28.2 Data Security
-- [ ] Encryption at rest (SQLite page encryption)
-- [ ] Encryption in transit (TLS for distributed mode)
-- [ ] Secrets management (environment variables, vault integration)
-- [ ] Audit logging for all operations
+- [ ] Encryption at rest — deferred: page encryption (SQLCipher) is incompatible with the zero-CGO constraint; guidance points to filesystem/volume-level encryption (README "Security Guidance")
+- [ ] Encryption in transit — deferred: TLS termination at the load balancer/proxy is the documented approach (bundled `deploy/` assets assume it); in-process `Server.ListenAndServeTLS` is available
+- [x] Secrets management — environment overrides (`RECALL__*`) and the K8s Secret in `deploy/kubernetes/recall.yaml` (Phases 27.3/27.4); vault integration deferred
+- [ ] Audit logging for all operations — deferred (multi-tenant)
 
 ### 28.3 Input Validation
-- [ ] Query sanitization
-- [ ] Document size limits
-- [ ] Embedding dimension validation
-- [ ] SQL injection prevention (for SQLite backend)
+- [ ] Query sanitization — deferred (not applicable: no dynamic SQL is built from query input)
+- [x] Document size limits (Phase 27.1: `server.max_upload_bytes` enforced via per-request `MaxBytesReader`)
+- [x] Embedding dimension validation (pre-existing: indexes reject chunks whose embedding dimension does not match)
+- [x] SQL injection prevention (inherent: `modernc.org/sqlite` prepared statements, all queries parameterized)
 
 ### 28.4 Compliance
-- [ ] Data retention policies
-- [ ] Right to deletion (GDPR)
-- [ ] Data export functionality
-- [ ] Compliance reporting
+- [ ] Data retention policies — deferred (multi-tenant)
+- [ ] Right to deletion (GDPR) — deferred (multi-tenant)
+- [ ] Data export functionality — deferred (multi-tenant)
+- [ ] Compliance reporting — deferred (multi-tenant)
 
 **Estimated Effort:** 3–4 weeks
-**Priority:** Low (needed for enterprise deployments)
+**Priority:** Low (needed for enterprise deployments); the deferred items above activate when (and if) a multi-tenant hosted service is required
 
 ---
 

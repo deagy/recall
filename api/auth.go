@@ -22,7 +22,10 @@ type Authenticator interface {
 
 type contextKey int
 
-const subjectKey contextKey = iota
+const (
+	subjectKey contextKey = iota
+	namespacesKey
+)
 
 // Subject returns the authenticated subject set by the RequireAuth
 // middleware, or "" when the request was not authenticated.
@@ -32,6 +35,29 @@ func Subject(r *http.Request) string {
 	}
 	s, _ := r.Context().Value(subjectKey).(string)
 	return s
+}
+
+// RequestNamespaces returns the namespace scope imposed on the request by
+// its authenticator (see NamespaceScoper), or nil when the request is
+// unrestricted. Handlers use it to enforce namespace-scoped credentials.
+func RequestNamespaces(r *http.Request) []string {
+	if r == nil {
+		return nil
+	}
+	ns, _ := r.Context().Value(namespacesKey).([]string)
+	return ns
+}
+
+// NamespaceScoper is an optional interface for Authenticators that impose
+// per-subject namespace restrictions (e.g. ScopedAPIKeyAuth). It returns the
+// namespaces a subject may access; nil or empty means unrestricted. When the
+// authenticator passed to RequireAuth implements it, the scope is injected
+// into the request context (see RequestNamespaces).
+type NamespaceScoper interface {
+	Authenticator
+	// Namespaces returns the allowed namespaces for the authenticated
+	// subject, or nil when the subject is unrestricted (or unknown).
+	Namespaces(subject string) []string
 }
 
 // RequireAuth wraps an http.Handler with authentication. Requests that fail
@@ -50,6 +76,11 @@ func RequireAuth(a Authenticator, hints ...string) func(http.Handler) http.Handl
 				return
 			}
 			ctx := context.WithValue(r.Context(), subjectKey, subject)
+			if scoper, ok := a.(NamespaceScoper); ok {
+				if ns := scoper.Namespaces(subject); len(ns) > 0 {
+					ctx = context.WithValue(ctx, namespacesKey, ns)
+				}
+			}
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -94,6 +125,73 @@ func bearerToken(r *http.Request) string {
 		return strings.TrimSpace(h[7:])
 	}
 	return ""
+}
+
+// KeySpec pairs an API key with the namespaces it may access. An empty
+// Namespaces list grants access to all namespaces (the key behaves like a
+// plain APIKeyAuth key).
+type KeySpec struct {
+	// Key is the API key value (required).
+	Key string
+
+	// Namespaces restricts the key to these namespaces. Empty means all.
+	Namespaces []string
+}
+
+// ScopedAPIKeyAuth authenticates API keys with optional per-key namespace
+// scope. The key is read from the X-API-Key header first, then from an
+// "Authorization: Bearer <key>" header; the subject is the key itself. A key
+// whose KeySpec lists namespaces is restricted to them: uploads must target
+// an allowed namespace, and search, RAG, and graph results are limited to
+// chunks in allowed namespaces. It implements NamespaceScoper, so the
+// RequireAuth middleware injects the scope into the request context.
+type ScopedAPIKeyAuth struct {
+	scopes map[string][]string
+}
+
+// NewScopedAPIKeyAuth creates a scoped API-key authenticator from the given
+// key specs. Empty keys are skipped; duplicate keys keep the first spec.
+func NewScopedAPIKeyAuth(specs ...KeySpec) *ScopedAPIKeyAuth {
+	m := make(map[string][]string, len(specs))
+	for _, s := range specs {
+		if s.Key == "" {
+			continue
+		}
+		if _, exists := m[s.Key]; exists {
+			continue
+		}
+		m[s.Key] = s.Namespaces
+	}
+	return &ScopedAPIKeyAuth{scopes: m}
+}
+
+// Authenticate implements Authenticator.
+func (a *ScopedAPIKeyAuth) Authenticate(r *http.Request) (string, bool) {
+	if a == nil {
+		return "", false
+	}
+	candidates := []string{r.Header.Get("X-API-Key"), bearerToken(r)}
+	for _, c := range candidates {
+		if _, ok := a.scopes[c]; ok {
+			return c, true
+		}
+	}
+	return "", false
+}
+
+// Namespaces implements NamespaceScoper. It returns a copy of the subject's
+// allowed namespaces, or nil when the subject is unknown or unrestricted.
+func (a *ScopedAPIKeyAuth) Namespaces(subject string) []string {
+	if a == nil {
+		return nil
+	}
+	ns, ok := a.scopes[subject]
+	if !ok || len(ns) == 0 {
+		return nil
+	}
+	out := make([]string, len(ns))
+	copy(out, ns)
+	return out
 }
 
 // jwtClaims holds the standard (RFC 7519) JWT claims used by JWTAuth.
@@ -259,4 +357,18 @@ func (c *Composite) Authenticate(r *http.Request) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// Namespaces implements NamespaceScoper: the first sub-authenticator in
+// order that reports a non-empty scope for the subject determines it,
+// mirroring Authenticate's first-match semantics.
+func (c *Composite) Namespaces(subject string) []string {
+	for _, a := range c.auths {
+		if scoper, ok := a.(NamespaceScoper); ok {
+			if ns := scoper.Namespaces(subject); len(ns) > 0 {
+				return ns
+			}
+		}
+	}
+	return nil
 }

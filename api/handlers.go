@@ -179,6 +179,85 @@ func parseFloatQuery(r *http.Request, name string, def float64) float64 {
 	return f
 }
 
+// namespaceNamer is implemented by stores that expose their default
+// namespace (all built-in stores do). It lets the API determine the
+// namespace an upload without an explicit namespace will land in.
+type namespaceNamer interface {
+	Namespace() string
+}
+
+// containsStr reports whether s is present in list.
+func containsStr(list []string, s string) bool {
+	for _, v := range list {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
+
+// searchNamespaceFilter returns a metadata filter restricting search results
+// to the request's allowed namespaces, or nil when the request is
+// unrestricted.
+func searchNamespaceFilter(r *http.Request) *index.TermInFilter {
+	allowed := RequestNamespaces(r)
+	if len(allowed) == 0 {
+		return nil
+	}
+	return &index.TermInFilter{Key: core.MetadataKeyNamespace, Values: allowed}
+}
+
+// checkUploadNamespace enforces the request's namespace scope for an upload.
+// Unrestricted requests always pass. For scoped requests the target namespace
+// is the document's namespace, falling back to the store's default when the
+// store exposes one; if it cannot be determined or is not allowed, a 403 is
+// written and false is returned.
+func (s *Server) checkUploadNamespace(w http.ResponseWriter, r *http.Request, doc *core.Document) bool {
+	allowed := RequestNamespaces(r)
+	if len(allowed) == 0 {
+		return true
+	}
+	ns := doc.Namespace
+	if ns == "" {
+		if namer, ok := s.cfg.Store.(namespaceNamer); ok {
+			ns = namer.Namespace()
+		}
+	}
+	if ns == "" {
+		writeError(w, http.StatusForbidden, ErrCodeForbidden, "uploads with a scoped API key must specify a namespace")
+		return false
+	}
+	if !containsStr(allowed, ns) {
+		writeError(w, http.StatusForbidden, ErrCodeForbidden, "namespace not allowed for this API key: "+ns)
+		return false
+	}
+	return true
+}
+
+// entityAllowed reports whether a graph entity is visible to the request.
+// Unrestricted requests see everything; scoped requests only see entities
+// with at least one source chunk stamped with an allowed namespace (entities
+// with no verifiable namespace are hidden — fail closed).
+func (s *Server) entityAllowed(r *http.Request, e *graph.Entity) bool {
+	allowed := RequestNamespaces(r)
+	if len(allowed) == 0 {
+		return true
+	}
+	if e == nil {
+		return false
+	}
+	for _, id := range e.SourceChunks {
+		chunk, ok := s.cfg.Store.GetChunk(id)
+		if !ok || chunk == nil {
+			continue
+		}
+		if ns := chunk.GetMetadataString(core.MetadataKeyNamespace); ns != "" && containsStr(allowed, ns) {
+			return true
+		}
+	}
+	return false
+}
+
 // handleUpload serves POST /upload: it builds a core.Document from the JSON
 // body and ingests it via the store.
 func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
@@ -199,6 +278,10 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	doc.Namespace = req.Namespace
 	doc.Tags = req.Tags
 	doc.Metadata = metadataFromJSON(req.Metadata)
+
+	if !s.checkUploadNamespace(w, r, doc) {
+		return
+	}
 
 	if err := s.cfg.Store.Upload(r.Context(), doc, req.Content); err != nil {
 		writeError(w, http.StatusInternalServerError, ErrCodeInternal, "upload failed: "+err.Error())
@@ -264,6 +347,9 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	opts := index.DefaultSearchOptions(k)
 	opts.MinScore = parseFloatQuery(r, "min_score", 0)
 	opts.EfSearch = parseIntQuery(r, "ef_search", 0)
+	if f := searchNamespaceFilter(r); f != nil {
+		opts.Filters = append(opts.Filters, f)
+	}
 
 	results, err := s.cfg.Store.Search(r.Context(), q, opts)
 	if err != nil {
@@ -296,6 +382,9 @@ func (s *Server) handleHybridSearch(w http.ResponseWriter, r *http.Request) {
 		opts.BM25Weight = 0.5
 	}
 	opts.EfSearch = req.EfSearch
+	if f := searchNamespaceFilter(r); f != nil {
+		opts.Filters = append(opts.Filters, f)
+	}
 
 	results, err := s.cfg.Store.SearchHybrid(r.Context(), req.Query, opts)
 	if err != nil {
@@ -341,10 +430,14 @@ func (s *Server) handleRAG(w http.ResponseWriter, r *http.Request) {
 
 	var resp *pipeline.RAGResponse
 	var err error
+	p := s.cfg.Pipeline
+	if f := searchNamespaceFilter(r); f != nil {
+		p = p.Clone().WithSearchFilters(f)
+	}
 	if req.Hybrid {
-		resp, err = s.cfg.Pipeline.QueryHybrid(r.Context(), req.Query)
+		resp, err = p.QueryHybrid(r.Context(), req.Query)
 	} else {
-		resp, err = s.cfg.Pipeline.Query(r.Context(), req.Query)
+		resp, err = p.Query(r.Context(), req.Query)
 	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, ErrCodeInternal, "rag query failed: "+err.Error())
@@ -392,16 +485,43 @@ func (s *Server) handleGraphEntity(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// allowedEntity caches per-request visibility checks for scoped requests
+	// (unscoped requests see everything).
+	allowed := make(map[string]bool)
+	allowedEntity := func(e *graph.Entity) bool {
+		if e == nil {
+			return false
+		}
+		if v, cached := allowed[e.ID]; cached {
+			return v
+		}
+		v := s.entityAllowed(r, e)
+		allowed[e.ID] = v
+		return v
+	}
+
+	// Out-of-scope entities are reported as not found, so the endpoint does
+	// not confirm their existence to scoped credentials.
+	if !allowedEntity(entity) {
+		writeError(w, http.StatusNotFound, ErrCodeNotFound, "entity not found: "+id)
+		return
+	}
+
 	var relations []relationDTO
 	for _, rel := range s.cfg.Graph.Relations() {
 		if rel.From == entity.ID || rel.To == entity.ID {
+			from, _ := s.cfg.Graph.GetEntity(rel.From)
+			to, _ := s.cfg.Graph.GetEntity(rel.To)
+			if !allowedEntity(from) || !allowedEntity(to) {
+				continue
+			}
 			relations = append(relations, relationDTO{From: rel.From, To: rel.To, Type: rel.Type, Weight: rel.Weight})
 		}
 	}
 
 	neighbors := make([]entityDTO, 0)
 	for _, n := range s.cfg.Graph.Neighbors(entity.ID) {
-		if n == nil {
+		if n == nil || !allowedEntity(n) {
 			continue
 		}
 		neighbors = append(neighbors, toEntityDTO(n))
@@ -432,10 +552,61 @@ func (s *Server) handleGraphReason(w http.ResponseWriter, r *http.Request) {
 		hops = 3
 	}
 
+	// allowedEntity caches per-request visibility checks for scoped requests
+	// (unscoped requests see everything).
+	allowed := make(map[string]bool)
+	allowedEntity := func(e *graph.Entity) bool {
+		if e == nil {
+			return false
+		}
+		if v, cached := allowed[e.ID]; cached {
+			return v
+		}
+		v := s.entityAllowed(r, e)
+		allowed[e.ID] = v
+		return v
+	}
+	// resolver resolves graph entities for scope checks: the configured graph
+	// store, falling back to the reasoning engine's own graph. When neither
+	// is available, scoped requests fail closed (everything denied).
+	var resolver func(id string) (*graph.Entity, bool)
+	switch {
+	case s.cfg.Graph != nil:
+		resolver = s.cfg.Graph.GetEntity
+	case s.cfg.Reasoner != nil && s.cfg.Reasoner.Graph() != nil:
+		resolver = s.cfg.Reasoner.Graph().GetEntity
+	}
+	allowedRelation := func(rel *graph.Relation) bool {
+		if rel == nil || resolver == nil {
+			return false
+		}
+		from, _ := resolver(rel.From)
+		to, _ := resolver(rel.To)
+		return allowedEntity(from) && allowedEntity(to)
+	}
+
 	switch {
 	case strings.TrimSpace(req.Query) != "":
 		for _, ir := range s.cfg.Reasoner.Reason(req.Query, hops) {
 			if ir == nil {
+				continue
+			}
+			var from, to *graph.Entity
+			if resolver != nil {
+				from, _ = resolver(ir.From)
+				to, _ = resolver(ir.To)
+			}
+			if !allowedEntity(from) || !allowedEntity(to) {
+				continue
+			}
+			pathOK := true
+			for _, rel := range ir.Path {
+				if !allowedRelation(rel) {
+					pathOK = false
+					break
+				}
+			}
+			if !pathOK {
 				continue
 			}
 			out.Inferences = append(out.Inferences, inferredRelationDTO{
@@ -450,6 +621,16 @@ func (s *Server) handleGraphReason(w http.ResponseWriter, r *http.Request) {
 	case strings.TrimSpace(req.From) != "" && strings.TrimSpace(req.To) != "":
 		for _, p := range s.cfg.Reasoner.ExplorePaths(req.From, req.To) {
 			if p == nil {
+				continue
+			}
+			pathOK := true
+			for _, e := range p.Entities {
+				if !allowedEntity(e) {
+					pathOK = false
+					break
+				}
+			}
+			if !pathOK {
 				continue
 			}
 			gp := graphPathDTO{Entities: make([]string, 0, len(p.Entities)), Relations: make([]string, 0, len(p.Relations))}

@@ -517,6 +517,70 @@ recall/
 | ANN | Brute-force (Phase 1), HNSW (Phase 6) | Simple first, scale later |
 | Dependencies | Zero for core | Easy adoption, no supply chain risk |
 
+## Security Guidance
+
+Recall is a library: the security boundary of your application **is** the host
+process. The notes below apply when you run the `recall-server` service
+(Phase 27) or embed the SDK behind your own service layer.
+
+### Authentication
+- **Library mode** — there is no built-in authentication by design; your
+  application's trust model (gateway, service mesh, middleware) is
+  responsible for authorization.
+- **Service mode** — enable the `auth` config section. Use static API keys
+  (`api_keys`) for single-tenant deployments, and **namespace-scoped keys**
+  (`scoped_keys`) when one store is shared across teams or projects. A
+  scoped key can only upload into, search, run RAG over, and traverse the
+  graph within its allowed namespaces:
+
+  ```json
+  "auth": {
+    "enabled": true,
+    "api_keys": ["admin-key"],
+    "scoped_keys": [
+      { "key": "team-a-key", "namespaces": ["team-a"] }
+    ]
+  }
+  ```
+
+  Scope is enforced on every data endpoint (`/upload`, `/search`,
+  `/hybrid-search`, `/rag`, `/graph/*`): disallowed upload targets receive
+  `403`, search/RAG retrieval is restricted to in-scope chunks, and
+  out-of-scope graph entities are reported as *not found* so their
+  existence is not leaked. Keys in `api_keys` remain unrestricted, so an
+  admin key can sit alongside scoped keys. JWT auth (`jwt_secret`, HS256)
+  is also available; JWT claims are not yet mapped to namespace scopes.
+
+### Encryption
+- **At rest** — the practical path for the pure-Go SQLite driver is
+  filesystem-level encryption (LUKS, BitLocker, or an encrypted cloud
+  volume; on Kubernetes, an encrypted volume for the database plus etcd
+  encryption for etcd-managed state). In-database page encryption
+  (e.g. SQLCipher) is **not supported**: it requires CGO, which Recall's
+  zero-CGO constraint rules out.
+- **In transit** — terminate TLS at the load balancer or reverse proxy
+  (the standard approach; the bundled `deploy/` assets assume it). The
+  server can also terminate TLS in-process via stdlib `net/http`
+  (`ListenAndServeTLS`) if you prefer.
+
+### Secrets
+- Never commit config files containing keys or JWT secrets. Use
+  environment overrides (`RECALL__AUTH__API_KEYS=...`,
+  `RECALL__AUTH__JWT_SECRET=...`) or the K8s Secret in
+  `deploy/kubernetes/recall.yaml`. Scoped keys go in the config file —
+  the env-var format does not express per-key namespace lists.
+- Rotate by changing the config and restarting (or letting the config
+  watcher hot-reload it). There is no per-key revocation list.
+
+### Threat-model notes
+- Namespace scoping is **not** a substitute for tenant isolation at the
+  process level: all namespaces share one SQLite file, so one process can
+  read them all. For hard isolation, run one server (and one database)
+  per tenant.
+- Chunks that were never stamped with a namespace (e.g. uploaded by an
+  older version) are invisible to scoped credentials — scope checks fail
+  closed rather than open.
+
 ## Current Status
 
 - [x] Phase 1: Core data model + chunking
@@ -557,6 +621,7 @@ recall/
 - [x] Phase 27.1: REST API — new stdlib-only `api` package: `Server`/`Handler` on Go 1.22+ `ServeMux` routing with `POST /upload`, `GET /search`, `POST /hybrid-search`, `POST /rag`, `GET /graph/{entity}` (ID + label fallback), `POST /graph/reason` (NL reasoning + path exploration), and operational `/healthz`, `/readyz`, `/diagnostics`; OpenAPI 3.0 spec embedded via `go:embed` and served at `GET /openapi.json`; pluggable `Authenticator` (API keys via `X-API-Key`/Bearer, HS256 JWTs verified with stdlib `crypto/hmac`, or `Composite`), CORS, and per-request body limits; `cmd/recall-server` is the standalone entrypoint (config-driven store/embedder/pipeline/graph wiring, graceful SIGINT/SIGTERM shutdown, `-health-probe` mode for curl-less containers)
 - [x] Phase 27.3: Configuration — new `config` package: JSON/YAML file loading (by extension) with defaults and multi-problem `Validate()`, environment overrides via `RECALL__SECTION__KEY` (double-underscore nesting; malformed values ignored), and `config.Watcher` hot reload (mtime/size polling, validated reload through a callback, invalid edits skipped and reported via `LastError`). **Phase 27.2 (gRPC) is intentionally deferred** — it requires protobuf codegen and the `grpc` dependency, and the roadmap marks it as future work
 - [x] Phase 27.4: Deployment — `deploy/Dockerfile` (multi-stage, `CGO_ENABLED=0` pure-Go build on distroless/nonroot, in-image `HEALTHCHECK` via the binary's `-health-probe` mode), `deploy/docker-compose.yml` (single node: mounted config + SQLite volume + env overrides, with a documented multi-node template), and `deploy/kubernetes/recall.yaml` (ConfigMap, Secret, Deployment with `/readyz`/`/healthz` probes and resource limits, Service, HPA). Example configs in `deploy/config/` are regression-tested by the `config` package
+- [x] Phase 28.1 (partial): Security — **namespace-scoped API keys** (`api.ScopedAPIKeyAuth` + `auth.scoped_keys`): per-key namespace restrictions enforced on every data endpoint (uploads `403` outside scope; search/hybrid/RAG retrieval restricted via a `core.MetadataKeyNamespace` filter; graph entities, relations, and reasoning paths filtered with out-of-scope entities reported as 404 — fail closed). Stores now stamp `core.MetadataKeyNamespace` on every chunk at upload, and `pipeline.RAGPipeline` gained race-safe `Clone()`/`WithSearchFilters()` for request-scoped retrieval. While adding scoping, two pre-existing bugs were fixed: memory-store hybrid search bypassed metadata filters for keyword-only (BM25) matches, and the SQLite store corrupted typed metadata values (`core.String` & co.) after a DB round-trip (legacy rows now unwrap transparently). The remainder of Phase 28 (RBAC, row-level security, at-rest/in-transit encryption, audit logging, vault, compliance) is **deferred** until a multi-tenant hosted service is needed — see the [Security Guidance](#security-guidance) section for the operational guidance that covers library and single-tenant service use in the meantime
 
 ## Roadmap
 

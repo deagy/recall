@@ -30,6 +30,7 @@ const (
 	ErrCodeBadRequest   = "bad_request"
 	ErrCodeNotFound     = "not_found"
 	ErrCodeUnauthorized = "unauthorized"
+	ErrCodeForbidden    = "forbidden"
 	ErrCodeMethod       = "method_not_allowed"
 	ErrCodeInternal     = "internal_error"
 )

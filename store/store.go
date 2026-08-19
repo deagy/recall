@@ -58,3 +58,19 @@ type Store interface {
 	// Close cleans up any resources held by the store.
 	Close() error
 }
+
+// stampChunkNamespace records the namespace on each chunk's metadata so that
+// callers can filter by it (e.g. namespace-scoped API credentials). It
+// overwrites any pre-existing core.MetadataKeyNamespace entry: the store is
+// authoritative for the namespace a chunk lands in.
+func stampChunkNamespace(chunks []*core.Chunk, ns string) {
+	for _, c := range chunks {
+		if c == nil {
+			continue
+		}
+		if c.Metadata == nil {
+			c.Metadata = make(map[string]core.Value, 1)
+		}
+		c.Metadata[core.MetadataKeyNamespace] = core.String{Value: ns}
+	}
+}

@@ -892,3 +892,85 @@ func (_m *mockChunker) Chunk(doc *core.Document, content string) ([]*core.Chunk,
 
 	return r0, r1
 }
+
+func TestMemoryStore_UploadStampsNamespaceMetadata(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+	ctx := context.Background()
+
+	// Chunks inherit the store's default namespace.
+	doc1 := core.NewDocument("doc-stamp", "Default", "source")
+	require.NoError(t, s.Upload(ctx, doc1, "Solar panels convert sunlight into electricity for off-grid cabins and remote homes."))
+	chunk, ok := s.GetChunk("doc-stamp::chunk-0")
+	require.True(t, ok, "expected default-namespace chunk to exist")
+	assert.Equal(t, "test", chunk.GetMetadataString(core.MetadataKeyNamespace),
+		"chunk must be stamped with the store's default namespace")
+
+	// A document namespace override wins over the store default.
+	doc2 := core.NewDocument("doc-override", "Team", "source")
+	doc2.Namespace = "team-a"
+	require.NoError(t, s.Upload(ctx, doc2, "Quarterly performance review notes about the roadmap and staffing plan for next year."))
+	chunk2, ok := s.GetChunk("doc-override::chunk-0")
+	require.True(t, ok, "expected override-namespace chunk to exist")
+	assert.Equal(t, "team-a", chunk2.GetMetadataString(core.MetadataKeyNamespace),
+		"chunk must be stamped with the document's namespace")
+
+	// The Namespace getter reports the configured default.
+	assert.Equal(t, "test", s.Namespace(), "expected the store's default namespace")
+}
+
+func TestMemoryStore_SearchNamespaceFilter(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+	ctx := context.Background()
+
+	require.NoError(t, s.Upload(ctx, core.NewDocument("doc-a", "A", "a"),
+		"Quarterly performance review notes about the roadmap and staffing plan for next year."))
+	docB := core.NewDocument("doc-b", "B", "b")
+	docB.Namespace = "team-b"
+	require.NoError(t, s.Upload(ctx, docB, "Submarines glide beneath the ocean surface carrying cargo to distant ports."))
+
+	// Unfiltered search spans both namespaces.
+	all, err := s.Search(ctx, "performance review ocean cargo", index.DefaultSearchOptions(10))
+	require.NoError(t, err, "unfiltered search should not fail")
+	assert.GreaterOrEqual(t, len(all), 2, "expected chunks from both namespaces")
+
+	// Filtered search only returns chunks stamped with the allowed namespace.
+	opts := index.DefaultSearchOptions(10)
+	opts.Filters = []index.Filter{&index.TermInFilter{Key: core.MetadataKeyNamespace, Values: []string{"team-b"}}}
+	results, err := s.Search(ctx, "performance review ocean cargo", opts)
+	require.NoError(t, err, "filtered search should not fail")
+	assert.NotEmpty(t, results, "expected team-b chunks for the filtered search")
+	for _, r := range results {
+		assert.Equal(t, "team-b", r.Chunk.GetMetadataString(core.MetadataKeyNamespace),
+			"filtered result %q leaked outside the allowed namespace", r.Chunk.ID)
+	}
+}
+
+// TestMemoryStore_HybridSearchAppliesFiltersToKeywordOnlyMatches guards the
+// fusion path: a chunk that matches only the BM25 (keyword) side must still
+// satisfy metadata filters, so filters cannot be bypassed via keyword hits.
+func TestMemoryStore_HybridSearchAppliesFiltersToKeywordOnlyMatches(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+	ctx := context.Background()
+
+	require.NoError(t, s.Upload(ctx, core.NewDocument("doc-a", "A", "a"),
+		"Apples are crisp and sweet, picked from the orchard in the autumn season."))
+	docB := core.NewDocument("doc-b", "B", "b")
+	docB.Namespace = "team-b"
+	require.NoError(t, s.Upload(ctx, docB, "Submarines glide beneath the ocean surface carrying cargo to distant ports."))
+
+	// "submarine" is a strong keyword hit only in team-b; the filter allows
+	// the default namespace, so no result may come from team-b.
+	opts := index.DefaultSearchOptions(10)
+	opts.Hybrid = true
+	opts.BM25Weight = 0.5
+	opts.Filters = []index.Filter{&index.TermInFilter{Key: core.MetadataKeyNamespace, Values: []string{"test"}}}
+	results, err := s.SearchHybrid(ctx, "submarine", opts)
+	require.NoError(t, err, "filtered hybrid search should not fail")
+	for _, r := range results {
+		assert.Equal(t, "test", r.Chunk.GetMetadataString(core.MetadataKeyNamespace),
+			"keyword-only hybrid match %q leaked outside the allowed namespace", r.Chunk.ID)
+	}
+}

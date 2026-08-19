@@ -189,6 +189,7 @@ func (s *SQLiteStore) Upload(ctx context.Context, doc *core.Document, content st
 	if ns == "" {
 		ns = s.config.Namespace
 	}
+	stampChunkNamespace(chunks, ns)
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -648,6 +649,12 @@ func (s *SQLiteStore) Namespaces() []string {
 	return ns
 }
 
+// Namespace returns the store's default namespace (used for documents that
+// do not override it).
+func (s *SQLiteStore) Namespace() string {
+	return s.config.Namespace
+}
+
 // Close cleans up resources.
 func (s *SQLiteStore) Close() error {
 	s.mu.Lock()
@@ -664,16 +671,40 @@ func serializeMetadata(meta map[string]core.Value) (interface{}, error) {
 	if meta == nil {
 		return nil, nil
 	}
-	// Use a map of interface{} for JSON serialization
+	// Serialize typed values as plain JSON primitives so they round-trip:
+	// marshaling the typed structs directly would produce objects
+	// ({"Value": ...}) that cannot be decoded back into core.Value.
 	m := make(map[string]interface{}, len(meta))
 	for k, v := range meta {
-		m[k] = v
+		m[k] = valueToJSON(v)
 	}
 	b, err := json.Marshal(m)
 	if err != nil {
 		return nil, err
 	}
 	return string(b), nil
+}
+
+// valueToJSON converts a typed Value to a plain JSON primitive.
+func valueToJSON(v core.Value) interface{} {
+	switch val := v.(type) {
+	case core.String:
+		return val.Value
+	case core.Number:
+		return val.Value
+	case core.Boolean:
+		return val.Value
+	case core.URI:
+		// URIs round-trip as plain strings (String on read).
+		return val.Value
+	case core.Literal:
+		return val.Value
+	case nil:
+		return nil
+	default:
+		// Unknown Value implementation: fall back to its string form.
+		return val.String()
+	}
 }
 
 // deserializeMetadata parses a JSON metadata string back to a map.
@@ -695,6 +726,21 @@ func deserializeMetadata(s string) map[string]core.Value {
 		case bool:
 			result[k] = core.Boolean{Value: val}
 		default:
+			// Legacy rows serialized typed values as objects
+			// ({"Value": ...}); unwrap them so older databases keep working.
+			if obj, ok := val.(map[string]interface{}); ok && len(obj) == 1 {
+				switch inner := obj["Value"].(type) {
+				case string:
+					result[k] = core.String{Value: inner}
+					continue
+				case float64:
+					result[k] = core.Number{Value: inner}
+					continue
+				case bool:
+					result[k] = core.Boolean{Value: inner}
+					continue
+				}
+			}
 			result[k] = core.String{Value: fmt.Sprintf("%v", val)}
 		}
 	}

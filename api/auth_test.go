@@ -216,3 +216,125 @@ func TestRequireAuth_Middleware(t *testing.T) {
 		t.Error("Subject(nil) should be empty")
 	}
 }
+
+func TestScopedAPIKeyAuth_Authenticate(t *testing.T) {
+	a := NewScopedAPIKeyAuth(
+		KeySpec{Key: "team-a", Namespaces: []string{"ns-a"}},
+		KeySpec{Key: "admin"},
+		KeySpec{Key: ""}, // skipped
+	)
+
+	// X-API-Key header for a scoped key.
+	req := newRequest(t, "GET", "/", http.Header{"X-API-Key": []string{"team-a"}})
+	subject, ok := a.Authenticate(req)
+	if !ok || subject != "team-a" {
+		t.Fatalf("Authenticate = (%q, %v), want (team-a, true)", subject, ok)
+	}
+
+	// Bearer header for an unscoped key.
+	req = newRequest(t, "GET", "/", http.Header{"Authorization": []string{"Bearer admin"}})
+	subject, ok = a.Authenticate(req)
+	if !ok || subject != "admin" {
+		t.Fatalf("Authenticate = (%q, %v), want (admin, true)", subject, ok)
+	}
+
+	// Unknown key.
+	req = newRequest(t, "GET", "/", http.Header{"X-API-Key": []string{"nope"}})
+	if _, ok := a.Authenticate(req); ok {
+		t.Error("unknown key should be rejected")
+	}
+
+	// Nil receiver.
+	var nilAuth *ScopedAPIKeyAuth
+	if _, ok := nilAuth.Authenticate(req); ok {
+		t.Error("nil authenticator should reject")
+	}
+}
+
+func TestScopedAPIKeyAuth_Namespaces(t *testing.T) {
+	a := NewScopedAPIKeyAuth(
+		KeySpec{Key: "team-a", Namespaces: []string{"ns-a", "ns-b"}},
+		KeySpec{Key: "admin"},
+	)
+
+	ns := a.Namespaces("team-a")
+	if len(ns) != 2 || ns[0] != "ns-a" || ns[1] != "ns-b" {
+		t.Fatalf("Namespaces(team-a) = %v, want [ns-a ns-b]", ns)
+	}
+
+	// Returns a copy, so callers cannot mutate the configured scope.
+	ns[0] = "mutated"
+	if got := a.Namespaces("team-a"); got[0] != "ns-a" {
+		t.Errorf("Namespaces leaked backing array: %v", got)
+	}
+
+	// Unscoped key and unknown subject return nil.
+	if got := a.Namespaces("admin"); got != nil {
+		t.Errorf("Namespaces(admin) = %v, want nil", got)
+	}
+	if got := a.Namespaces("ghost"); got != nil {
+		t.Errorf("Namespaces(ghost) = %v, want nil", got)
+	}
+
+	var nilAuth *ScopedAPIKeyAuth
+	if got := nilAuth.Namespaces("team-a"); got != nil {
+		t.Errorf("nil Namespaces = %v, want nil", got)
+	}
+}
+
+func TestComposite_ScopedNamespaces(t *testing.T) {
+	scoped := NewScopedAPIKeyAuth(KeySpec{Key: "team-a", Namespaces: []string{"ns-a"}})
+	plain := NewAPIKeyAuth("other")
+	c := NewComposite(scoped, plain)
+
+	if got := c.Namespaces("team-a"); len(got) != 1 || got[0] != "ns-a" {
+		t.Fatalf("Composite.Namespaces(team-a) = %v, want [ns-a]", got)
+	}
+	// A subject known only to a non-scoped authenticator has no scope.
+	if got := c.Namespaces("other"); got != nil {
+		t.Errorf("Composite.Namespaces(other) = %v, want nil", got)
+	}
+}
+
+func TestRequireAuth_InjectsNamespaceScope(t *testing.T) {
+	a := NewScopedAPIKeyAuth(KeySpec{Key: "team-a", Namespaces: []string{"ns-a"}})
+	var gotNs []string
+	var gotSubject string
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotSubject = Subject(r)
+		gotNs = RequestNamespaces(r)
+		w.WriteHeader(http.StatusOK)
+	})
+	h := RequireAuth(a, "Bearer")(inner)
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, newRequest(t, "GET", "/", http.Header{"X-API-Key": []string{"team-a"}}))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if gotSubject != "team-a" {
+		t.Errorf("subject = %q, want team-a", gotSubject)
+	}
+	if len(gotNs) != 1 || gotNs[0] != "ns-a" {
+		t.Errorf("RequestNamespaces = %v, want [ns-a]", gotNs)
+	}
+
+	// An unscoped authenticator leaves the scope empty.
+	a2 := NewAPIKeyAuth("plain")
+	var plainNs []string
+	inner2 := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		plainNs = RequestNamespaces(r)
+		w.WriteHeader(http.StatusOK)
+	})
+	h2 := RequireAuth(a2)(inner2)
+	rec2 := httptest.NewRecorder()
+	h2.ServeHTTP(rec2, newRequest(t, "GET", "/", http.Header{"X-API-Key": []string{"plain"}}))
+	if plainNs != nil {
+		t.Errorf("unscoped RequestNamespaces = %v, want nil", plainNs)
+	}
+
+	// RequestNamespaces on a nil request is safe.
+	if RequestNamespaces(nil) != nil {
+		t.Error("RequestNamespaces(nil) should be nil")
+	}
+}

@@ -83,6 +83,7 @@ func (s *MemoryStore) Upload(ctx context.Context, doc *core.Document, content st
 	if ns == "" {
 		ns = s.config.Namespace
 	}
+	stampChunkNamespace(chunks, ns)
 	s.mu.Lock()
 	idx, ok := s.indexes[ns]
 	if !ok {
@@ -249,9 +250,25 @@ func fuseMap(vecResults []index.SearchResult, bm25Scores map[string]float64, loo
 			// No longer present in the index (e.g. deleted): skip.
 			continue
 		}
+		// Vector results are already filtered at the index level; keyword-only
+		// matches are not, so the final chunk must satisfy the filters too.
+		if !chunkMatchesFilters(chunk, opts.Filters) {
+			continue
+		}
 		results = append(results, index.SearchResult{Chunk: chunk, Score: fusedScore})
 	}
 	return results
+}
+
+// chunkMatchesFilters reports whether the chunk satisfies every metadata
+// filter (nil filters are ignored).
+func chunkMatchesFilters(chunk *core.Chunk, filters []index.Filter) bool {
+	for _, f := range filters {
+		if f != nil && !f.Match(chunk) {
+			return false
+		}
+	}
+	return true
 }
 
 // GetChunk returns a chunk by its ID.
@@ -328,6 +345,12 @@ func (s *MemoryStore) Namespaces() []string {
 		ns = append(ns, name)
 	}
 	return ns
+}
+
+// Namespace returns the store's default namespace (used for documents that
+// do not override it).
+func (s *MemoryStore) Namespace() string {
+	return s.config.Namespace
 }
 
 // Close cleans up resources.

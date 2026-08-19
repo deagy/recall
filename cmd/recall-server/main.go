@@ -219,11 +219,21 @@ func envKey(name string) (string, error) {
 	return v, nil
 }
 
-// buildAuthenticator assembles the API authenticator from config.
+// buildAuthenticator assembles the API authenticator from config. API keys
+// (plain and scoped) are always served by a single api.ScopedAPIKeyAuth so
+// per-key namespace scopes are enforced; JWT auth is composed alongside it
+// when configured.
 func buildAuthenticator(a config.AuthConfig) (api.Authenticator, error) {
 	var auths []api.Authenticator
-	if len(a.APIKeys) > 0 {
-		auths = append(auths, api.NewAPIKeyAuth(a.APIKeys...))
+	if len(a.APIKeys) > 0 || len(a.ScopedKeys) > 0 {
+		specs := make([]api.KeySpec, 0, len(a.APIKeys)+len(a.ScopedKeys))
+		for _, k := range a.APIKeys {
+			specs = append(specs, api.KeySpec{Key: k})
+		}
+		for _, sk := range a.ScopedKeys {
+			specs = append(specs, api.KeySpec{Key: sk.Key, Namespaces: sk.Namespaces})
+		}
+		auths = append(auths, api.NewScopedAPIKeyAuth(specs...))
 	}
 	if a.JWTSecret != "" {
 		jwt, err := api.NewJWTAuth(api.JWTConfig{

@@ -175,6 +175,11 @@ type AuthConfig struct {
 	// APIKeys are static API keys accepted via X-API-Key or Bearer.
 	APIKeys []string `json:"api_keys" yaml:"api_keys"`
 
+	// ScopedKeys are API keys with per-key namespace restrictions (see
+	// api.ScopedAPIKeyAuth): a key with non-empty Namespaces may only
+	// access those namespaces. Keys listed in APIKeys remain unrestricted.
+	ScopedKeys []ScopedKeyConfig `json:"scoped_keys,omitempty" yaml:"scoped_keys,omitempty"`
+
 	// JWTSecret is the shared HS256 secret for JWT bearer tokens.
 	JWTSecret string `json:"jwt_secret" yaml:"jwt_secret"`
 
@@ -183,6 +188,15 @@ type AuthConfig struct {
 
 	// JWTAudience, when set, must appear in the "aud" claim.
 	JWTAudience string `json:"jwt_audience" yaml:"jwt_audience"`
+}
+
+// ScopedKeyConfig pairs an API key with the namespaces it may access.
+type ScopedKeyConfig struct {
+	// Key is the API key value (required).
+	Key string `json:"key" yaml:"key"`
+
+	// Namespaces restricts the key to these namespaces. Empty means all.
+	Namespaces []string `json:"namespaces,omitempty" yaml:"namespaces,omitempty"`
 }
 
 // WithDefaults fills zero-valued fields with sensible defaults. It is
@@ -352,8 +366,21 @@ func (c *Config) Validate() error {
 
 	a := c.Auth
 	if a.Enabled {
-		if len(a.APIKeys) == 0 && a.JWTSecret == "" {
-			problems = append(problems, "auth: enable requires at least one api_keys entry or jwt_secret")
+		if len(a.APIKeys) == 0 && len(a.ScopedKeys) == 0 && a.JWTSecret == "" {
+			problems = append(problems, "auth: enable requires at least one api_keys or scoped_keys entry, or jwt_secret")
+		}
+	}
+	plain := make(map[string]struct{}, len(a.APIKeys))
+	for _, k := range a.APIKeys {
+		plain[k] = struct{}{}
+	}
+	for i, sk := range a.ScopedKeys {
+		if strings.TrimSpace(sk.Key) == "" {
+			problems = append(problems, fmt.Sprintf("auth.scoped_keys[%d].key is required", i))
+			continue
+		}
+		if _, dup := plain[sk.Key]; dup {
+			problems = append(problems, fmt.Sprintf("auth: key is defined in both api_keys and scoped_keys: %q", sk.Key))
 		}
 	}
 

@@ -157,6 +157,48 @@ func TestValidate_MultipleProblems(t *testing.T) {
 	}
 }
 
+func TestValidate_ScopedKeys(t *testing.T) {
+	// Scoped keys alone satisfy the auth-enabled requirement.
+	c := &Config{}
+	c.WithDefaults()
+	c.Auth.Enabled = true
+	c.Auth.ScopedKeys = []ScopedKeyConfig{{Key: "team-a", Namespaces: []string{"ns-a"}}}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("scoped-key-only auth should validate, got: %v", err)
+	}
+
+	// A blank scoped key is rejected.
+	bad := &Config{}
+	bad.WithDefaults()
+	bad.Auth.ScopedKeys = []ScopedKeyConfig{{Key: "  "}}
+	if err := bad.Validate(); err == nil || !strings.Contains(err.Error(), "scoped_keys[0].key") {
+		t.Errorf("expected scoped_keys[0].key error, got: %v", err)
+	}
+
+	// A key in both api_keys and scoped_keys is ambiguous and rejected.
+	dup := &Config{}
+	dup.WithDefaults()
+	dup.Auth.Enabled = true
+	dup.Auth.APIKeys = []string{"shared"}
+	dup.Auth.ScopedKeys = []ScopedKeyConfig{{Key: "shared"}}
+	if err := dup.Validate(); err == nil || !strings.Contains(err.Error(), "both api_keys and scoped_keys") {
+		t.Errorf("expected duplicate-key error, got: %v", err)
+	}
+}
+
+func TestLoad_ScopedKeys(t *testing.T) {
+	content := `{"auth": {"enabled": true, "api_keys": ["admin"], "scoped_keys": [{"key": "team-a", "namespaces": ["ns-a", "ns-b"]}]}}`
+	path := writeTemp(t, "cfg.json", content)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.Auth.ScopedKeys) != 1 || cfg.Auth.ScopedKeys[0].Key != "team-a" ||
+		len(cfg.Auth.ScopedKeys[0].Namespaces) != 2 || cfg.Auth.ScopedKeys[0].Namespaces[0] != "ns-a" {
+		t.Errorf("scoped keys not loaded: %+v", cfg.Auth.ScopedKeys)
+	}
+}
+
 func TestApplyEnv(t *testing.T) {
 	c := &Config{}
 	c.WithDefaults()
