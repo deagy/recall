@@ -71,6 +71,47 @@ func opMatMul(a, b *Tensor) (*Tensor, error) {
 	if err != nil {
 		return nil, err
 	}
+	aFull := append(batch, m, k)
+	bFull := append(batch, k2, nn)
+	outShape := append(append([]int64{}, batch...), m, nn)
+	if a1d {
+		outShape = outShape[1:]
+	}
+	if b1d {
+		outShape = outShape[:len(outShape)-1]
+	}
+	// Fast path: when both operands are float32, accumulate in float32
+	// directly on the raw data, skipping the float64 conversion entirely.
+	// This is the common case for sentence-transformer ONNX exports.
+	if a.Dtype == Float32 && b.Dtype == Float32 {
+		av32, ok := a.Data.([]float32)
+		if !ok {
+			return nil, fmt.Errorf("MatMul: float32 tensor has unexpected data layout")
+		}
+		bv32, ok := b.Data.([]float32)
+		if !ok {
+			return nil, fmt.Errorf("MatMul: float32 tensor has unexpected data layout")
+		}
+		af := broadcastValues32(av32, aS, aFull)
+		bf := broadcastValues32(bv32, bS, bFull)
+		nBatch := shapeSize(batch)
+		out := make([]float32, nBatch*m*nn)
+		for bb := int64(0); bb < nBatch; bb++ {
+			for i := int64(0); i < m; i++ {
+				rowA := (bb*m + i) * k
+				rowO := (bb*m + i) * nn
+				for j := int64(0); j < nn; j++ {
+					var s float32
+					rowB := (bb*k2)*nn + j
+					for t := int64(0); t < k; t++ {
+						s += af[rowA+t] * bf[rowB+t*nn]
+					}
+					out[rowO+j] = s
+				}
+			}
+		}
+		return NewTensor(outShape, Float32, out)
+	}
 	av, err := a.AsFloat64()
 	if err != nil {
 		return nil, err
@@ -79,8 +120,6 @@ func opMatMul(a, b *Tensor) (*Tensor, error) {
 	if err != nil {
 		return nil, err
 	}
-	aFull := append(batch, m, k)
-	bFull := append(batch, k2, nn)
 	av = broadcastValues(av, aS, aFull)
 	bv = broadcastValues(bv, bS, bFull)
 	nBatch := shapeSize(batch)
@@ -98,13 +137,6 @@ func opMatMul(a, b *Tensor) (*Tensor, error) {
 				out[rowO+j] = s
 			}
 		}
-	}
-	outShape := append(append([]int64{}, batch...), m, nn)
-	if a1d {
-		outShape = outShape[1:]
-	}
-	if b1d {
-		outShape = outShape[:len(outShape)-1]
 	}
 	return makeFloat(outShape, pickFloatDtype(a, b), out)
 }

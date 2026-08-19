@@ -148,6 +148,37 @@ func TestOnnxEmbedder(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestOnnxEmbedderEmbedBatchConcurrency(t *testing.T) {
+	e, err := NewOnnxEmbedder(OnnxEmbedderConfig{
+		Model:            buildMiniStModel(t),
+		Tokenize:         byteTokenizer,
+		Output:           "pooled",
+		BatchConcurrency: 4,
+	})
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	texts := []string{"alpha", "bravo", "charlie", "delta", "echo", "foxtrot"}
+	batch, err := e.EmbedBatch(ctx, texts)
+	require.NoError(t, err)
+	require.Len(t, batch, len(texts))
+
+	// Results must be in input order, matching per-item Embed output even
+	// when executed by multiple parallel workers.
+	for i, text := range texts {
+		single, err := e.Embed(ctx, text)
+		require.NoError(t, err)
+		assert.Equal(t, single, batch[i], "item %d (%q) out of order", i, text)
+	}
+}
+
+func TestOnnxEmbedderEmbedBatchEmpty(t *testing.T) {
+	e := newTestOnnxEmbedder(t, false)
+	out, err := e.EmbedBatch(context.Background(), nil)
+	require.NoError(t, err)
+	assert.Nil(t, out)
+}
+
 func TestOnnxEmbedderNormalized(t *testing.T) {
 	e := newTestOnnxEmbedder(t, true)
 	vec, err := e.Embed(context.Background(), "hello world")

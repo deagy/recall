@@ -35,22 +35,35 @@ type OnnxEmbedderConfig struct {
 	// Dimension optionally pins the output dimension, skipping the lazy
 	// probe run that Dimension() would otherwise perform.
 	Dimension int
+
+	// BatchConcurrency caps how many sequences EmbedBatch executes in
+	// parallel. Zero (the default) auto-selects a worker count from the
+	// available CPUs (capped at 8). Values <= 0 are treated as the
+	// default; a value of 1 forces sequential execution. Note that peak
+	// memory scales linearly with concurrency, since each in-flight
+	// sequence holds its full intermediate tensor state.
+	BatchConcurrency int
 }
 
 // OnnxEmbedder is a zero-network embedder backed by a pure-Go ONNX
 // inference runtime. It runs sentence-transformer (or similar) ONNX
 // exports locally.
 type OnnxEmbedder struct {
-	model     *onnx.Model
-	tokenize  TokenizerFunc
-	output    string
-	normalize bool
+	model            *onnx.Model
+	tokenize         TokenizerFunc
+	output           string
+	normalize        bool
+	batchConcurrency int
 
 	once   sync.Once
 	dim    int
 	dimErr error
 	dimSet bool
 }
+
+// Compile-time assertion that OnnxEmbedder satisfies the public Embedder
+// interface (Embed, EmbedBatch, Dimension).
+var _ Embedder = (*OnnxEmbedder)(nil)
 
 // NewOnnxEmbedder creates an embedder from a loaded ONNX model.
 func NewOnnxEmbedder(cfg OnnxEmbedderConfig) (*OnnxEmbedder, error) {
@@ -61,10 +74,11 @@ func NewOnnxEmbedder(cfg OnnxEmbedderConfig) (*OnnxEmbedder, error) {
 		return nil, fmt.Errorf("embedder: onnx embedder requires a tokenizer function")
 	}
 	e := &OnnxEmbedder{
-		model:     cfg.Model,
-		tokenize:  cfg.Tokenize,
-		output:    cfg.Output,
-		normalize: cfg.Normalize,
+		model:            cfg.Model,
+		tokenize:         cfg.Tokenize,
+		output:           cfg.Output,
+		normalize:        cfg.Normalize,
+		batchConcurrency: cfg.BatchConcurrency,
 	}
 	if cfg.Dimension > 0 {
 		e.dim = cfg.Dimension
@@ -96,22 +110,10 @@ func (e *OnnxEmbedder) outputName() string {
 	return outs[len(outs)-1].Name
 }
 
-// embedOne tokenizes, runs the model, and flattens the chosen output to a
-// float32 vector. A 2-D output of the form [S, D] uses row 0 (the CLS
-// convention); higher-rank outputs are flattened from the first axis pair
-// forward.
-func (e *OnnxEmbedder) embedOne(ctx context.Context, text string) ([]float32, error) {
-	if ctxErr := ctx.Err(); ctxErr != nil {
-		return nil, ctxErr
-	}
-	feeds, err := e.tokenize(text)
-	if err != nil {
-		return nil, fmt.Errorf("embedder: onnx tokenization failed: %w", err)
-	}
-	outs, err := e.model.Run(ctx, feeds)
-	if err != nil {
-		return nil, fmt.Errorf("embedder: onnx inference failed: %w", err)
-	}
+// readVector extracts the embedding vector from a model output map. A 2-D
+// output of the form [S, D] uses row 0 (the CLS token convention); a
+// rank-1 tensor is already the vector.
+func (e *OnnxEmbedder) readVector(outs map[string]*onnx.Tensor) ([]float32, error) {
 	name := e.outputName()
 	if name == "" {
 		return nil, fmt.Errorf("embedder: onnx model declares no outputs; set Output explicitly")
@@ -124,8 +126,6 @@ func (e *OnnxEmbedder) embedOne(ctx context.Context, text string) ([]float32, er
 	if err != nil {
 		return nil, fmt.Errorf("embedder: onnx output %q is not numeric: %w", name, err)
 	}
-	// A rank-1 tensor is already the vector; for rank >= 2 take the first
-	// row (the CLS token convention for sequence outputs).
 	if len(t.Shape) >= 2 {
 		d := int(t.Shape[len(t.Shape)-1])
 		vec = vec[:d]
@@ -140,22 +140,56 @@ func (e *OnnxEmbedder) embedOne(ctx context.Context, text string) ([]float32, er
 	return out, nil
 }
 
+// embedOne tokenizes, runs the model, and reads the embedding vector.
+func (e *OnnxEmbedder) embedOne(ctx context.Context, text string) ([]float32, error) {
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return nil, ctxErr
+	}
+	feeds, err := e.tokenize(text)
+	if err != nil {
+		return nil, fmt.Errorf("embedder: onnx tokenization failed: %w", err)
+	}
+	outs, err := e.model.Run(ctx, feeds)
+	if err != nil {
+		return nil, fmt.Errorf("embedder: onnx inference failed: %w", err)
+	}
+	return e.readVector(outs)
+}
+
 // Embed converts a single text into an embedding vector.
 func (e *OnnxEmbedder) Embed(ctx context.Context, text string) ([]float32, error) {
 	return e.embedOne(ctx, text)
 }
 
 // EmbedBatch converts multiple texts into embedding vectors, one per text.
+// Sequences are tokenized sequentially (cheap) and then executed in
+// parallel by the ONNX runtime, with the worker count controlled by
+// BatchConcurrency (0 = auto).
 func (e *OnnxEmbedder) EmbedBatch(ctx context.Context, texts []string) ([][]float32, error) {
-	outs := make([][]float32, len(texts))
+	if len(texts) == 0 {
+		return nil, nil
+	}
+	feeds := make([]map[string]*onnx.Tensor, len(texts))
 	for i, text := range texts {
-		vec, err := e.embedOne(ctx, text)
+		f, err := e.tokenize(text)
+		if err != nil {
+			return nil, fmt.Errorf("embedder: onnx embed batch item %d: tokenization failed: %w", i, err)
+		}
+		feeds[i] = f
+	}
+	outs, err := e.model.BatchRun(ctx, feeds, e.batchConcurrency)
+	if err != nil {
+		return nil, fmt.Errorf("embedder: onnx embed batch: %w", err)
+	}
+	vecs := make([][]float32, len(texts))
+	for i, out := range outs {
+		vec, err := e.readVector(out)
 		if err != nil {
 			return nil, fmt.Errorf("embedder: onnx embed batch item %d: %w", i, err)
 		}
-		outs[i] = vec
+		vecs[i] = vec
 	}
-	return outs, nil
+	return vecs, nil
 }
 
 // Dimension returns the output dimension, probing the model once with a

@@ -334,6 +334,46 @@ func broadcastValues(vals []float64, from, to []int64) []float64 {
 	return out
 }
 
+// broadcastValues32 is the float32 counterpart of broadcastValues, used by
+// the float32 MatMul fast path to avoid float64 conversion.
+func broadcastValues32(vals []float32, from, to []int64) []float32 {
+	if int64(len(vals)) == shapeSize(to) && sameShape(from, to) {
+		return vals
+	}
+	out := make([]float32, shapeSize(to))
+	fromStride := make([]int64, len(from))
+	for i := len(from) - 1; i >= 0; i-- {
+		fromStride[i] = 1
+		if i < len(from)-1 {
+			fromStride[i] = fromStride[i+1] * from[i+1]
+		}
+	}
+	offTo := make([]int64, len(to))
+	offset := 0
+	for offset < int(shapeSize(to)) {
+		fromPos := 0
+		for i := len(to) - 1; i >= 0; i-- {
+			fi := i - (len(to) - len(from))
+			if fi < 0 {
+				break
+			}
+			if from[fi] != 1 {
+				fromPos += int(offTo[i]) * int(fromStride[fi])
+			}
+		}
+		out[offset] = vals[fromPos]
+		for i := len(to) - 1; i >= 0; i-- {
+			offTo[i]++
+			if offTo[i] < to[i] {
+				break
+			}
+			offTo[i] = 0
+		}
+		offset++
+	}
+	return out
+}
+
 func sameShape(a, b []int64) bool {
 	if len(a) != len(b) {
 		return false

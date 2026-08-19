@@ -108,9 +108,9 @@ there.
 
 ### 20.2 Local Embedding Models (ONNX Runtime)
 - [x] `OnnxEmbedder` using pure-Go ONNX inference — `embedder/onnx/` (hand-rolled protobuf wire codec, tensor runtime, ~50-operator executor covering the sentence-transformer operator family) + `embedder/onnx_embedder.go` adapter implementing `embedder.Embedder`, wired into the `Pipeline` failover chain; tokenization is dependency-injected via `TokenizerFunc`
-- [ ] First-party support for `all-MiniLM-L6-v2`, `nomic-embed-text`, `bge-small-en-v1.5` (bundled tokenizers for known exports)
-- [ ] CPU optimization (thread pool, vectorization)
-- [ ] Model download and caching
+- [x] First-party support for `all-MiniLM-L6-v2`, `bge-small-en-v1.5`, `nomic-embed-text-v1.5` — bundled fully-offline WordPiece tokenizer (`embedder/tokenizer_wordpiece.go`) with the shared BERT-uncased vocab embedded (zero CGO, zero network), a `BundledTokenizer(modelName, model)` registry, and per-model configs (lowercasing, max length, CLS/SEP, padding)
+- [x] CPU optimization — float32 `MatMul` fast path (no float64 round-trip on the hottest kernel), `Model.BatchRun` worker-pool that executes sequences in parallel over shared read-only initializers, and `OnnxEmbedder.BatchConcurrency` (0 = auto from `runtime.NumCPU()`, capped at 8)
+- [x] Model download and caching — `embedder.ModelCache` (SHA-256-keyed on-disk cache, atomic temp-file writes, TTL, concurrent-fetch dedup) + `LoadHFModel` (HuggingFace resolver URL, configurable base URL for mirrors/offline, cache-aware)
 
 ### 20.3 Cohere Embeddings
 - [x] `CohereEmbedder` for `embed-english-v3.0`, `embed-multilingual-v3.0`
