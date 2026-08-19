@@ -3,6 +3,7 @@ package distributed
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/deagy/recall/core"
@@ -282,6 +283,26 @@ func (sm *ShardManager) getShardIDForChunk(chunkID string) string {
 }
 
 // Search searches across all active shards.
+// sortSearchResults orders results by relevance score (descending) with a
+// deterministic tie-break on chunk ID. This makes scatter-gather merges across
+// shards return a stable, relevance-ranked ordering independent of the
+// non-deterministic shard iteration order.
+func sortSearchResults(results []index.SearchResult) {
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].Score != results[j].Score {
+			return results[i].Score > results[j].Score
+		}
+		idI, idJ := "", ""
+		if results[i].Chunk != nil {
+			idI = results[i].Chunk.ID
+		}
+		if results[j].Chunk != nil {
+			idJ = results[j].Chunk.ID
+		}
+		return idI < idJ
+	})
+}
+
 func (sm *ShardManager) Search(ctx context.Context, query []float32, opts index.SearchOptions) ([]index.SearchResult, error) {
 	activeShards := sm.GetActiveShards()
 
@@ -296,6 +317,11 @@ func (sm *ShardManager) Search(ctx context.Context, query []float32, opts index.
 		}
 		allResults = append(allResults, results...)
 	}
+
+	// Rank the merged results by relevance so the ordering is stable and
+	// deterministic regardless of which shard a chunk lives on (shard
+	// iteration order is not deterministic).
+	sortSearchResults(allResults)
 
 	if lastErr != nil {
 		return allResults, lastErr
@@ -319,6 +345,11 @@ func (sm *ShardManager) SearchHybrid(ctx context.Context, query []float32, opts 
 		}
 		allResults = append(allResults, results...)
 	}
+
+	// Rank the merged results by relevance so the ordering is stable and
+	// deterministic regardless of which shard a chunk lives on (shard
+	// iteration order is not deterministic).
+	sortSearchResults(allResults)
 
 	if lastErr != nil {
 		return allResults, lastErr
