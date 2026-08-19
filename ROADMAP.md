@@ -236,10 +236,10 @@ there.
 **Goal:** Enable continuous improvement of retrieval quality.
 
 ### 24.1 Relevance Feedback
-- [ ] `feedback.RelevanceFeedback` — adjust query based on user feedback
-- [ ] `feedback.Rocchio` — classic Rocchio algorithm for query expansion
-- [ ] `feedback.ExpandAndRetrieve` — retrieve → user marks relevant → re-rank
-- [ ] Store feedback in metadata for future training
+- [x] `feedback.RelevanceFeedback` — adjusts a query based on user feedback (Rocchio), with `BoostRelevant` re-ranking
+- [x] `feedback.Rocchio` — classic Rocchio query expansion in **both** vector form (`Q' = αQ + β·mean(relevant) − γ·mean(irrelevant)`) and lexical/term form (returns an expanded query string)
+- [x] `feedback.ExpandAndRetrieve` — retrieve → user marks relevant → re-rank (embed → gather feedback embeddings → Rocchio → re-search → boost relevant)
+- [x] Store feedback in metadata for future training — `feedback.Collector` (thread-safe training store) + `Feedback.ToMetadata()`
 
 ### 24.2 Evaluation Framework
 - [ ] `eval.RetrievalEval` — precision, recall, MRR, NDCG at K
