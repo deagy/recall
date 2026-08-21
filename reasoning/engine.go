@@ -119,7 +119,10 @@ func (e *Engine) InferRelations() []*InferredRelation {
 	return inferred
 }
 
-// ExplorePaths finds all paths between two entities up to maxDepth hops.
+// ExplorePaths finds shortest-hop paths between two entities up to maxDepth
+// hops. Entities are visited at most once per search, so the result is a
+// breadth-first search tree: at most one path per intermediate entity, not
+// the full set of all simple paths between the two endpoints.
 func (e *Engine) ExplorePaths(from, to string) []*graph.Path {
 	g := e.graph
 	if _, ok := g.GetEntity(from); !ok {
