@@ -66,6 +66,34 @@ Back up first: `recall store backup`.
 _No releases have been published yet. Use the template below when adding
 entries:_
 
+### Next release (unreleased)
+
+**Breaking changes**
+
+- `index.MemoryIndex.Delete`, `store.MemoryStore.DeleteChunk` — deleting a
+  chunk ID that does not exist now returns `core.ErrNotFound` (previously
+  `nil`; the error was declared but unreachable). `MemoryStore.DeleteChunk`
+  now searches every namespace index before reporting not-found. Migrate:
+  treat a non-nil error from delete as "not present" with
+  `errors.Is(err, core.ErrNotFound)`. No call sites inside this repository
+  (`api`, `cmd`) relied on the old nil-for-missing behavior.
+
+**Behavioral changes**
+
+- SQLite stores now write `created_at`/`updated_at` as real UTC RFC3339
+  instants (previously local time with a literal `Z`). Values written before
+  this change on a non-UTC host may be off by the host's zone offset;
+  re-upload affected documents if exact timestamps matter.
+- SQLite `DeleteChunk`/`DeleteDocument` now also delete the corresponding
+  `embeddings` rows (previously orphaned, since SQLite foreign keys are not
+  enforced without `PRAGMA foreign_keys`).
+- `SearchOptions.MinScore` is now applied on every search path, including
+  SQLite brute-force/HNSW/hybrid and MemoryStore hybrid fusion (against the
+  fused score). Result sets that previously leaked below-threshold chunks on
+  those paths are now filtered.
+
+## Release Notes (template)
+
 ```markdown
 ### v0.X.0 → v0.Y.0
 

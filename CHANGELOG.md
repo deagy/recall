@@ -10,6 +10,34 @@ note in [docs/MIGRATION.md](./docs/MIGRATION.md).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Breaking** `index`/`store`: deleting a missing chunk now reports
+  `core.ErrNotFound` instead of returning `nil`. `MemoryIndex.Delete`
+  (plain and HNSW modes) and `MemoryStore.DeleteChunk` (which now tries
+  every namespace index) return the error when no index contains the ID.
+  See the migration note in
+  [docs/MIGRATION.md](./docs/MIGRATION.md).
+- `bm25`: re-adding an existing document no longer double-counts
+  `docCount`/`docFreq` (IDF and `avgDocLen` drift), and removing an unknown
+  document is a no-op instead of decrementing `docCount`.
+- `store`: SQLite `created_at`/`updated_at` now store real UTC RFC3339
+  timestamps; they previously stored local wall-clock time with a literal
+  `Z` suffix (fake UTC marker).
+- `store`: SQLite `DeleteChunk`/`DeleteDocument` now remove the associated
+  `embeddings` rows in the same transaction; the declared `ON DELETE CASCADE`
+  never fired because `PRAGMA foreign_keys` is off by default in SQLite, so
+  deletes left orphaned embedding rows.
+- `store`/`index`: `SearchOptions.MinScore` is now honored on all search
+  paths — SQLite brute-force, SQLite HNSW, SQLite FTS5 hybrid fusion, and
+  MemoryStore hybrid fusion (applied to the fused score).
+  `MemoryStore.SearchHybrid` no longer pre-filters the vector leg by
+  `MinScore`, so hybrid fusion sees every chunk's true vector score.
+- Regression tests: BM25 count consistency (`bm25`), not-found delete
+  semantics (`index`, `store`), UTC timestamps + embedding cleanup
+  (`store/sqlite_test.go`), and Memory vs SQLite MinScore parity for vector
+  and hybrid search (`store/minscore_parity_test.go`).
+
 ## [0.1.0] — 2026-08-19
 
 The initial release contains everything developed through Phase 32 of the
