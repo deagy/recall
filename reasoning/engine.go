@@ -11,9 +11,10 @@ import (
 
 // Engine provides multi-hop reasoning over the knowledge graph.
 type Engine struct {
-	graph    *graph.KnowledgeGraph
-	rules    []InferenceRule
-	maxDepth int
+	graph         *graph.KnowledgeGraph
+	rules         []InferenceRule
+	maxDepth      int
+	minConfidence float64
 }
 
 // Config holds configuration for the reasoning engine.
@@ -49,9 +50,10 @@ func NewEngine(g *graph.KnowledgeGraph, cfg Config) *Engine {
 		cfg.Rules = DefaultRules()
 	}
 	return &Engine{
-		graph:    g,
-		rules:    cfg.Rules,
-		maxDepth: cfg.MaxDepth,
+		graph:         g,
+		rules:         cfg.Rules,
+		maxDepth:      cfg.MaxDepth,
+		minConfidence: cfg.MinConfidence,
 	}
 }
 
@@ -87,16 +89,19 @@ func (ir *InferredRelation) String() string {
 	return fmt.Sprintf("InferredRelation{%s --[%s, conf=%.2f]--> %s (via %s)}", ir.From, ir.Type, ir.Confidence, ir.To, ir.Rule)
 }
 
-// InferRelations finds all relations that can be inferred from the graph using the configured rules.
+// InferRelations finds all relations that can be inferred from the graph using
+// the configured rules. Inferred relations with a confidence below the
+// engine's configured MinConfidence are dropped.
 func (e *Engine) InferRelations() []*InferredRelation {
 	var inferred []*InferredRelation
 	seen := make(map[string]bool)
 
-	for _, rel := range e.graph.Relations() {
+	relations := e.graph.Relations()
+	for _, rel := range relations {
 		for _, rule := range e.rules {
 			if ir, ok := rule.Apply(rel); ok {
 				key := ir.From + "|" + ir.To + "|" + ir.Type
-				if !seen[key] && ir.Weight >= e.graph.Relations()[0].Weight*0.1 {
+				if !seen[key] && ir.Weight >= e.minConfidence {
 					seen[key] = true
 					inferred = append(inferred, &InferredRelation{
 						From:       ir.From,

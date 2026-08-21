@@ -118,6 +118,32 @@ func TestEngine_InferRelations(t *testing.T) {
 	}
 }
 
+func TestEngine_InferRelations_RespectsMinConfidence(t *testing.T) {
+	g := graph.NewKnowledgeGraph()
+	g.AddEntity(graph.NewEntity("a", "Alice", graph.EntityPerson))
+	g.AddEntity(graph.NewEntity("b", "Bob", graph.EntityPerson))
+	g.AddRelation(graph.NewRelation("a", "b", "knows", 0.9))
+
+	// Every default rule derives a confidence <= 0.9 from a 0.9-weight
+	// relation, so a 0.99 threshold must drop all of them.
+	strict := NewEngine(g, Config{MaxDepth: 1, MinConfidence: 0.99, Rules: DefaultRules()})
+	if got := strict.InferRelations(); len(got) != 0 {
+		t.Fatalf("expected no inferences above 0.99 threshold, got %d: %v", len(got), got)
+	}
+
+	// A 0.3 threshold must keep inferences, and all kept ones must meet it.
+	loose := NewEngine(g, Config{MaxDepth: 1, MinConfidence: 0.3, Rules: DefaultRules()})
+	got := loose.InferRelations()
+	if len(got) == 0 {
+		t.Fatal("expected inferences above 0.3 threshold")
+	}
+	for _, ir := range got {
+		if ir.Confidence < 0.3 {
+			t.Fatalf("inferred relation below configured MinConfidence: %s", ir)
+		}
+	}
+}
+
 func TestEngine_ExplorePaths(t *testing.T) {
 	g := graph.NewKnowledgeGraph()
 	g.AddEntity(graph.NewEntity("a", "Alice", graph.EntityPerson))
