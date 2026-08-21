@@ -25,6 +25,26 @@ func TestWeightedFusion_Basic(t *testing.T) {
 	assert.InDelta(t, 9.0, result["c"], 0.01, "c score")
 }
 
+func TestWeightedFusion_ThreeMapsWeightsSumToOne(t *testing.T) {
+	f := NewWeightedFusion(0.6)
+
+	// With 3 maps the weights are 0.6, 0.2, 0.2 — equal scores must come
+	// out unchanged, proving the weights sum to 1.
+	s1 := map[string]float64{"a": 10}
+	s2 := map[string]float64{"a": 10}
+	s3 := map[string]float64{"a": 10}
+
+	result := f.Fuse(s1, s2, s3)
+	assert.InDelta(t, 10.0, result["a"], 0.001, "a score with 3 equal maps")
+
+	// Unequal scores: 0.6*8 + 0.2*4 + 0.2*2 = 4.8 + 0.8 + 0.4 = 6.0
+	t1 := map[string]float64{"a": 8}
+	t2 := map[string]float64{"a": 4}
+	t3 := map[string]float64{"a": 2}
+	result = f.Fuse(t1, t2, t3)
+	assert.InDelta(t, 6.0, result["a"], 0.001, "a weighted 3-map score")
+}
+
 func TestWeightedFusion_PureVector(t *testing.T) {
 	f := NewWeightedFusion(1.0)
 	s1 := map[string]float64{"a": 10, "b": 20}
