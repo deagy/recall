@@ -18,6 +18,9 @@ func NewFixed(cfg Config) Chunker {
 	if cfg.MaxTokens <= 0 {
 		cfg.MaxTokens = 512
 	}
+	if cfg.Separator == "" {
+		cfg.Separator = "\n\n"
+	}
 	if cfg.OverlapTokens < 0 {
 		cfg.OverlapTokens = 0
 	}
@@ -27,60 +30,48 @@ func NewFixed(cfg Config) Chunker {
 	return &FixedChunker{config: cfg}
 }
 
-// Chunk splits the document content into fixed-size chunks.
+// Chunk splits the document content into fixed-size chunks. Each chunk is at
+// most MaxTokens*4 runes (rough estimate: 1 token ≈ 4 chars); a single part
+// longer than that is pre-split so it can never be flushed whole into a
+// chunk. The config's Separator splits the input and rejoins parts within a
+// chunk.
 func (f *FixedChunker) Chunk(doc *core.Document, content string) ([]*core.Chunk, error) {
 	if content == "" {
 		return nil, nil
 	}
 
 	sep := f.config.Separator
-	if sep == "" {
-		sep = "\n\n"
-	}
+	sepLen := utf8.RuneCountInString(sep)
 
 	maxChars := f.config.MaxTokens * 4 // rough estimate: 1 token ≈ 4 chars
 	overlapChars := f.config.OverlapTokens * 4
 
-	// Split by separator first, then reassemble into fixed-size chunks
+	// Split by separator first, then reassemble into fixed-size chunks.
+	// Pre-split any part that exceeds maxChars so no single part can
+	// produce an oversized chunk, regardless of accumulated state.
 	parts := strings.Split(content, sep)
 	if len(parts) == 0 {
 		parts = []string{content}
 	}
+	normalized := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if utf8.RuneCountInString(strings.TrimSpace(part)) > maxChars {
+			normalized = append(normalized, splitBySize(part, maxChars, sep)...)
+			continue
+		}
+		normalized = append(normalized, part)
+	}
 
 	var chunks []*core.Chunk
 	var currentParts []string
-	currentSize := 0
+	currentSize := 0 // rune count of the joined content, separators included
 	chunkIndex := 0
 
-	for _, part := range parts {
+	for _, part := range normalized {
 		partLen := utf8.RuneCountInString(strings.TrimSpace(part))
 
-		// If a single part exceeds max size, split it further
-		if partLen > maxChars && len(currentParts) == 0 {
-			// Flush any accumulated parts first
-			if len(currentParts) > 0 {
-				chunk := f.buildChunk(doc, currentParts, chunkIndex)
-				if chunk != nil {
-					chunks = append(chunks, chunk)
-					chunkIndex++
-				}
-				currentParts = nil
-				currentSize = 0
-			}
-			// Split the large part
-			subParts := splitBySize(part, maxChars, sep)
-			for _, sp := range subParts {
-				chunk := f.buildChunk(doc, []string{sp}, chunkIndex)
-				if chunk != nil {
-					chunks = append(chunks, chunk)
-					chunkIndex++
-				}
-			}
-			continue
-		}
-
 		// If adding this part would exceed max size, emit current chunk
-		if currentSize+partLen > maxChars && len(currentParts) > 0 {
+		if len(currentParts) > 0 && currentSize+sepLen+partLen > maxChars {
 			chunk := f.buildChunk(doc, currentParts, chunkIndex)
 			if chunk != nil {
 				chunks = append(chunks, chunk)
@@ -103,6 +94,9 @@ func (f *FixedChunker) Chunk(doc *core.Document, content string) ([]*core.Chunk,
 			}
 		}
 
+		if len(currentParts) > 0 {
+			currentSize += sepLen
+		}
 		currentParts = append(currentParts, part)
 		currentSize += partLen
 	}

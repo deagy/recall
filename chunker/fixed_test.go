@@ -1,8 +1,10 @@
 package chunker
 
 import (
+	"strconv"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/deagy/recall/core"
 	"github.com/stretchr/testify/assert"
@@ -108,6 +110,43 @@ func TestFixedChunker_CustomConfig(t *testing.T) {
 	chunks, err := c.Chunk(doc, content)
 	require.NoError(t, err)
 	require.NotEmpty(t, chunks, "should produce chunks with custom config")
+}
+
+func TestFixedChunker_ChunksRespectMaxSize(t *testing.T) {
+	cfg := Config{MaxTokens: 50, MinChunkSize: 1, OverlapTokens: 0} // maxChars = 200
+	c := NewFixed(cfg)
+	doc := &core.Document{ID: "doc1"}
+
+	// One long paragraph with no separator: forces pre-splitting of an
+	// oversized part, previously only handled when nothing was accumulated.
+	var b strings.Builder
+	for i := 0; i < 20; i++ {
+		b.WriteString("This is a paragraph numbered " + strconv.Itoa(i) +
+			" with enough words to exceed the maximum chunk size. ")
+	}
+
+	chunks, err := c.Chunk(doc, b.String())
+	require.NoError(t, err)
+	require.NotEmpty(t, chunks, "long paragraph should produce chunks")
+	for _, chunk := range chunks {
+		assert.LessOrEqual(t, utf8.RuneCountInString(chunk.Content), cfg.MaxTokens*4,
+			"chunk %d (%d runes) exceeds max size: %q", chunk.ChunkIndex,
+			utf8.RuneCountInString(chunk.Content), chunk.Content)
+	}
+}
+
+func TestFixedChunker_ZeroConfigSeparatorDefaultsToNewline(t *testing.T) {
+	// A zero Separator must default to "\n\n" at construction, so parts are
+	// rejoined with a separator instead of being concatenated.
+	c := NewFixed(Config{MaxTokens: 100})
+	doc := &core.Document{ID: "doc1"}
+
+	chunks, err := c.Chunk(doc, "alpha beta\n\ngamma delta")
+	require.NoError(t, err)
+	require.Len(t, chunks, 1, "small content should produce one chunk")
+	assert.Contains(t, chunks[0].Content, "\n\n",
+		"zero-config separator should default to newline pair")
+	assert.NotContains(t, chunks[0].Content, "betagamma")
 }
 
 func BenchmarkFixedChunker_SmallDoc(b *testing.B) {
