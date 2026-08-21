@@ -116,27 +116,31 @@ func (m *MemoryIndex) buildHNSW() {
 	m.hnswEnabled = true
 }
 
-// Delete removes a chunk from the index.
+// Delete removes a chunk from the index. It returns core.ErrNotFound when
+// the ID is not present.
 func (m *MemoryIndex) Delete(_ context.Context, id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Check if HNSW is enabled and tombstone ratio exceeds threshold
+	if _, ok := m.chunks[id]; !ok {
+		return core.ErrNotFound
+	}
+
+	// Drop the chunk so it is invisible to searches, Count, and GetChunk
+	// (until a graph rebuild in HNSW mode).
+	delete(m.chunks, id)
+	m.bm25.RemoveDocument(id)
+
+	// Tombstone the HNSW node; the graph is rebuilt once tombstones
+	// dominate the live entries.
 	if m.hnswEnabled {
 		if m.deleted == nil {
 			m.deleted = make(map[string]bool)
 		}
 		m.deleted[id] = true
-		// Drop the chunk so it is invisible to searches, Count, and GetChunk
-		// until the graph is rebuilt.
-		delete(m.chunks, id)
-		m.bm25.RemoveDocument(id)
 		if float64(len(m.deleted)) > m.tombstoneThreshold*float64(len(m.chunks)) {
 			m.rebuildHNSW()
 		}
-	} else {
-		delete(m.chunks, id)
-		m.bm25.RemoveDocument(id)
 	}
 	return nil
 }

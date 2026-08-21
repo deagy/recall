@@ -211,9 +211,35 @@ func TestMemoryIndex_AddBatch_EmbeddingMismatch(t *testing.T) {
 
 func TestMemoryIndex_Delete_NonExistent(t *testing.T) {
 	idx := NewMemoryIndex("test", 3)
+	for _, c := range makeTestChunks(3) {
+		_ = idx.Add(context.Background(), c)
+	}
 	err := idx.Delete(context.Background(), "nonexistent")
-	// Delete should not fail even if chunk doesn't exist
-	assert.NoError(t, err, "Delete non-existent should not fail")
+	assert.ErrorIs(t, err, core.ErrNotFound, "Delete of a missing ID must report ErrNotFound")
+	assert.Equal(t, 3, idx.Count(), "count must be unchanged by a failed delete")
+}
+
+func TestMemoryIndex_Delete_TwiceReturnsNotFound(t *testing.T) {
+	idx := NewMemoryIndex("test", 3)
+	for _, c := range makeTestChunks(3) {
+		_ = idx.Add(context.Background(), c)
+	}
+	require.NoError(t, idx.Delete(context.Background(), "c2"), "first delete should succeed")
+	err := idx.Delete(context.Background(), "c2")
+	assert.ErrorIs(t, err, core.ErrNotFound, "second delete must report ErrNotFound")
+	assert.Equal(t, 2, idx.Count(), "count must not drift on repeated deletes")
+}
+
+func TestMemoryIndex_Delete_TwiceReturnsNotFound_HNSW(t *testing.T) {
+	idx := NewMemoryIndex("test", 3)
+	idx.SetHNSWThreshold(1) // force HNSW activation
+	for _, c := range makeTestChunks(3) {
+		_ = idx.Add(context.Background(), c)
+	}
+	require.NoError(t, idx.Delete(context.Background(), "c1"), "first delete should succeed")
+	err := idx.Delete(context.Background(), "c1")
+	assert.ErrorIs(t, err, core.ErrNotFound, "second delete must report ErrNotFound in HNSW mode")
+	assert.Equal(t, 2, idx.Count(), "count must not drift on repeated deletes")
 }
 
 func TestMemoryIndex_GetChunk_EmptyIndex(t *testing.T) {

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
@@ -283,16 +284,48 @@ func (s *MemoryStore) GetChunk(id string) (*core.Chunk, bool) {
 	return nil, false
 }
 
-// DeleteChunk removes a chunk from the store.
+// DeleteChunk removes a chunk from the store. Every namespace index is
+// tried; the call succeeds if any index removed the chunk. It returns
+// core.ErrNotFound when no index contains the chunk. On success the chunk
+// ID is pruned from the document bookkeeping so DeleteDocument does not
+// replay it later.
 func (s *MemoryStore) DeleteChunk(ctx context.Context, id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	removed := false
+	var firstErr error
 	for _, idx := range s.indexes {
-		if err := idx.Delete(ctx, id); err == nil {
-			return nil
+		err := idx.Delete(ctx, id)
+		if err == nil {
+			removed = true
+			continue
+		}
+		if !errors.Is(err, core.ErrNotFound) && firstErr == nil {
+			firstErr = err
 		}
 	}
-	return core.ErrNotFound
+	if !removed {
+		if firstErr != nil {
+			return firstErr
+		}
+		return core.ErrNotFound
+	}
+	if firstErr != nil {
+		return firstErr
+	}
+	// Prune the chunk from the document bookkeeping; a document whose last
+	// chunk was removed is dropped entirely.
+	for docID, ids := range s.docChunks {
+		if !ids[id] {
+			continue
+		}
+		delete(ids, id)
+		if len(ids) == 0 {
+			delete(s.docChunks, docID)
+		}
+		break
+	}
+	return nil
 }
 
 // DeleteDocument removes all chunks belonging to a document.
@@ -313,7 +346,10 @@ func (s *MemoryStore) DeleteDocument(ctx context.Context, docID string) error {
 	firstErr := error(nil)
 	for id := range chunkIDs {
 		for _, idx := range indexes {
-			if err := idx.Delete(ctx, id); err != nil && firstErr == nil {
+			err := idx.Delete(ctx, id)
+			// A chunk belongs to a single namespace index; the other
+			// indexes report ErrNotFound, which is expected here.
+			if err != nil && !errors.Is(err, core.ErrNotFound) && firstErr == nil {
 				firstErr = err
 			}
 		}

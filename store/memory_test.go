@@ -271,6 +271,71 @@ func TestMemoryStore_DeleteNonExistentChunk(t *testing.T) {
 	assert.ErrorIs(t, err, core.ErrNotFound, "expected ErrNotFound")
 }
 
+// TestMemoryStore_DeleteChunk_MissingWithIndexesPresent reproduces the bug
+// where DeleteChunk returned nil for unknown IDs once any namespace index
+// existed (MemoryIndex.Delete used to always return nil).
+func TestMemoryStore_DeleteChunk_MissingWithIndexesPresent(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	uploadAndVerify(t, s, "doc1", "Content uploaded so a namespace index exists before the delete attempt.")
+
+	before := s.Count()
+	err := s.DeleteChunk(context.Background(), "no-such-chunk")
+	assert.ErrorIs(t, err, core.ErrNotFound, "delete of a missing chunk must report ErrNotFound")
+	assert.Equal(t, before, s.Count(), "count must be unchanged by a failed delete")
+}
+
+// TestMemoryStore_DeleteChunk_PrunesDocumentBookkeeping verifies that a
+// chunk removed via DeleteChunk is dropped from the doc -> chunks map, so
+// DeleteDocument does not replay the stale ID.
+func TestMemoryStore_DeleteChunk_PrunesDocumentBookkeeping(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	uploadAndVerify(t, s, "doc1", "Single chunk document for bookkeeping pruning tests.")
+
+	results, err := s.Search(context.Background(), "document", index.DefaultSearchOptions(10))
+	require.NoError(t, err)
+	require.NotEmpty(t, results, "expected results to identify the chunk")
+	for _, r := range results {
+		require.NoError(t, s.DeleteChunk(context.Background(), r.Chunk.ID))
+	}
+	assert.Equal(t, 0, s.Count(), "expected no chunks left")
+
+	// The document's bookkeeping must be gone: DeleteDocument reports not found.
+	err = s.DeleteDocument(context.Background(), "doc1")
+	assert.ErrorIs(t, err, core.ErrNotFound, "doc bookkeeping must be pruned when its last chunk is deleted")
+}
+
+// TestMemoryStore_DeleteChunk_MultipleNamespaces verifies that DeleteChunk
+// tries every namespace index (not just the first) and that unknown IDs
+// still report ErrNotFound with several namespaces present.
+func TestMemoryStore_DeleteChunk_MultipleNamespaces(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+	ctx := context.Background()
+
+	docA := core.NewDocument("doc-a", "A", "source")
+	docA.Namespace = "ns-a"
+	require.NoError(t, s.Upload(ctx, docA, "Alpha namespace content long enough to be chunked by the fixed chunker."))
+
+	docB := core.NewDocument("doc-b", "B", "source")
+	docB.Namespace = "ns-b"
+	require.NoError(t, s.Upload(ctx, docB, "Beta namespace content long enough to be chunked by the fixed chunker."))
+
+	require.ElementsMatch(t, []string{"ns-a", "ns-b"}, s.Namespaces())
+	require.Equal(t, 2, s.Count())
+
+	// Deleting must succeed regardless of which index holds the chunk.
+	require.NoError(t, s.DeleteChunk(ctx, "doc-a::chunk-0"))
+	require.NoError(t, s.DeleteChunk(ctx, "doc-b::chunk-0"))
+	assert.Equal(t, 0, s.Count())
+
+	err := s.DeleteChunk(ctx, "doc-a::chunk-0")
+	assert.ErrorIs(t, err, core.ErrNotFound, "re-delete must report ErrNotFound across all namespaces")
+}
+
 func TestMemoryStore_DeleteDocumentNonExistent(t *testing.T) {
 	s := newTestStore(t)
 	defer s.Close()
