@@ -120,6 +120,79 @@ func TestBM25_LengthNormalization(t *testing.T) {
 	assert.Equal(t, "short", results[0].DocID, "expected 'short' first (length norm)")
 }
 
+// scoresByID converts search results to a map for order-independent comparison.
+func scoresByID(results []SearchResult) map[string]float64 {
+	m := make(map[string]float64, len(results))
+	for _, r := range results {
+		m[r.DocID] = r.Score
+	}
+	return m
+}
+
+func TestBM25_AddDocument_ReAddKeepsCountConsistent(t *testing.T) {
+	b := New(DefaultConfig())
+	b.AddDocument("doc1", "go programming language")
+	b.AddDocument("doc1", "rust systems programming")
+
+	require.Equal(t, 1, b.Count(), "re-adding an existing docID must not grow the count")
+
+	// Old postings must be gone, new content must be searchable.
+	for _, r := range b.Search("go") {
+		assert.NotEqual(t, "doc1", r.DocID, "stale terms must be removed on re-add")
+	}
+	results := b.Search("rust")
+	require.NotEmpty(t, results, "new content must be searchable after re-add")
+	assert.Equal(t, "doc1", results[0].DocID, "expected doc1 for new terms")
+}
+
+func TestBM25_AddDocument_ReAddMatchesFreshIndex(t *testing.T) {
+	// Re-adding must leave exactly the same state as if the replacement
+	// document had been the only version ever added (count, IDF, avgDocLen).
+	withReAdd := New(DefaultConfig())
+	withReAdd.AddDocument("doc1", "go programming language")
+	withReAdd.AddDocument("doc2", "python programming language")
+	withReAdd.AddDocument("doc1", "rust systems programming safety")
+
+	fresh := New(DefaultConfig())
+	fresh.AddDocument("doc2", "python programming language")
+	fresh.AddDocument("doc1", "rust systems programming safety")
+
+	require.Equal(t, fresh.Count(), withReAdd.Count(), "counts must match")
+
+	for _, query := range []string{"programming", "rust", "python", "safety"} {
+		assert.Equal(t, scoresByID(fresh.Search(query)), scoresByID(withReAdd.Search(query)),
+			"scores for query %q must match a fresh index", query)
+	}
+}
+
+func TestBM25_RemoveDocument_UnknownIsNoOp(t *testing.T) {
+	b := New(DefaultConfig())
+	b.AddDocument("doc1", "go programming language")
+
+	before := scoresByID(b.Search("go"))
+	b.RemoveDocument("does-not-exist")
+
+	require.Equal(t, 1, b.Count(), "removing an unknown docID must not change the count")
+	assert.Equal(t, before, scoresByID(b.Search("go")), "scores must be unchanged")
+}
+
+func TestBM25_RemoveDocument_UnaffectedScoresUnchanged(t *testing.T) {
+	// Removing one document must not shift docFreq (and therefore scores)
+	// of terms it never contained.
+	b := New(DefaultConfig())
+	b.AddDocument("doc1", "go programming language")
+	b.AddDocument("doc2", "python scripting language")
+	b.RemoveDocument("doc1")
+
+	fresh := New(DefaultConfig())
+	fresh.AddDocument("doc2", "python scripting language")
+
+	require.Equal(t, fresh.Count(), b.Count(), "counts must match")
+	assert.Equal(t, scoresByID(fresh.Search("python")), scoresByID(b.Search("python")))
+	assert.Equal(t, scoresByID(fresh.Search("language")), scoresByID(b.Search("language")),
+		"docFreq of shared terms must only drop for docs that contained them")
+}
+
 func BenchmarkBM25_AddDocument(b *testing.B) {
 	bm := New(DefaultConfig())
 	doc := "the quick brown fox jumps over the lazy dog and runs through the forest"

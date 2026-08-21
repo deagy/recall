@@ -91,17 +91,17 @@ func tokenize(content string) []string {
 }
 
 // AddDocument adds a document to the BM25 index. Returns tokenized tokens.
+// Re-adding an existing docID replaces the previous version: its old
+// postings are removed first so docCount, docFreq, and avgDocLen stay
+// consistent.
 func (b *BM25) AddDocument(docID string, content string) []string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	tokens := tokenize(content)
+	b.removeLocked(docID)
 	b.docLens[docID] = len(tokens)
 	b.docCount++
-	totalLen := 0
-	for _, l := range b.docLens {
-		totalLen += l
-	}
-	b.avgDocLen = float64(totalLen) / float64(b.docCount)
+	b.recomputeAvgDocLen()
 	tf := make(map[string]int)
 	for _, t := range tokens {
 		tf[t]++
@@ -114,6 +114,43 @@ func (b *BM25) AddDocument(docID string, content string) []string {
 		b.docFreq[term]++
 	}
 	return tokens
+}
+
+// removeLocked removes a document's length entry and postings. It reports
+// whether the document was present. Callers must hold b.mu.
+func (b *BM25) removeLocked(docID string) bool {
+	if _, ok := b.docLens[docID]; !ok {
+		return false
+	}
+	delete(b.docLens, docID)
+	for term, dm := range b.postings {
+		if _, ok := dm[docID]; !ok {
+			continue
+		}
+		delete(dm, docID)
+		if len(dm) == 0 {
+			delete(b.postings, term)
+			delete(b.docFreq, term)
+		} else {
+			b.docFreq[term]--
+		}
+	}
+	b.docCount--
+	return true
+}
+
+// recomputeAvgDocLen refreshes avgDocLen from the current docLens map.
+// Callers must hold b.mu.
+func (b *BM25) recomputeAvgDocLen() {
+	if b.docCount == 0 {
+		b.avgDocLen = 0
+		return
+	}
+	totalLen := 0
+	for _, l := range b.docLens {
+		totalLen += l
+	}
+	b.avgDocLen = float64(totalLen) / float64(b.docCount)
 }
 
 // SearchResult represents a single BM25 result.
@@ -172,28 +209,13 @@ func (b *BM25) Count() int {
 	return b.docCount
 }
 
-// RemoveDocument removes a document from the index.
+// RemoveDocument removes a document from the index. Removing an unknown
+// docID is a no-op.
 func (b *BM25) RemoveDocument(docID string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	delete(b.docLens, docID)
-	for term, dm := range b.postings {
-		delete(dm, docID)
-		if len(dm) == 0 {
-			delete(b.postings, term)
-			delete(b.docFreq, term)
-		} else {
-			b.docFreq[term]--
-		}
+	if !b.removeLocked(docID) {
+		return
 	}
-	b.docCount--
-	if b.docCount > 0 {
-		totalLen := 0
-		for _, l := range b.docLens {
-			totalLen += l
-		}
-		b.avgDocLen = float64(totalLen) / float64(b.docCount)
-	} else {
-		b.avgDocLen = 0
-	}
+	b.recomputeAvgDocLen()
 }
