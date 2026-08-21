@@ -718,3 +718,50 @@ func TestSQLiteStore_Upload_TimestampsAreUTC(t *testing.T) {
 		})
 	}
 }
+
+// TestSQLiteStore_DeleteChunk_RemovesEmbedding is the orphaned-embeddings
+// regression test for chunk deletion: SQLite never enforces the
+// ON DELETE CASCADE without PRAGMA foreign_keys, so the embedding row must
+// be removed explicitly.
+func TestSQLiteStore_DeleteChunk_RemovesEmbedding(t *testing.T) {
+	s := newTestSQLiteStore(t)
+	ctx := context.Background()
+
+	doc := core.NewDocument("doc1", "Test", "test.txt")
+	require.NoError(t, s.Upload(ctx, doc, "Delete me please and remove this document from the store completely."))
+
+	var before, after int
+	require.NoError(t, s.db.QueryRow(`SELECT COUNT(*) FROM embeddings`).Scan(&before))
+	require.Greater(t, before, 0, "expected an embedding row before delete")
+
+	require.NoError(t, s.DeleteChunk(ctx, "doc1::chunk-0"))
+
+	require.NoError(t, s.db.QueryRow(`SELECT COUNT(*) FROM embeddings`).Scan(&after))
+	assert.Equal(t, before-1, after, "embedding row must be removed with its chunk")
+}
+
+// TestSQLiteStore_DeleteDocument_RemovesEmbeddings is the orphaned-embeddings
+// regression test for document deletion: only the deleted document's
+// embeddings may be removed, other documents' rows must survive.
+func TestSQLiteStore_DeleteDocument_RemovesEmbeddings(t *testing.T) {
+	s := newTestSQLiteStore(t)
+	ctx := context.Background()
+
+	doc1 := core.NewDocument("doc1", "A", "test.txt")
+	require.NoError(t, s.Upload(ctx, doc1, "First document content for the orphaned embeddings regression test suite."))
+	doc2 := core.NewDocument("doc2", "B", "test.txt")
+	require.NoError(t, s.Upload(ctx, doc2, "Second document content for the orphaned embeddings regression test suite."))
+
+	var total, doc1Count int
+	require.NoError(t, s.db.QueryRow(`SELECT COUNT(*) FROM embeddings`).Scan(&total))
+	require.NoError(t, s.db.QueryRow(
+		`SELECT COUNT(*) FROM embeddings WHERE chunk_id IN (SELECT id FROM chunks WHERE document_ref = ?)`, "doc1",
+	).Scan(&doc1Count))
+	require.Greater(t, doc1Count, 0, "expected embeddings for doc1")
+
+	require.NoError(t, s.DeleteDocument(ctx, "doc1"))
+
+	var after int
+	require.NoError(t, s.db.QueryRow(`SELECT COUNT(*) FROM embeddings`).Scan(&after))
+	assert.Equal(t, total-doc1Count, after, "doc1 embeddings must be removed while doc2's remain")
+}

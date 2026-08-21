@@ -577,6 +577,14 @@ func (s *SQLiteStore) DeleteChunk(ctx context.Context, id string) error {
 	if err != nil {
 		return fmt.Errorf("deleting chunk: %w", err)
 	}
+	// SQLite does not enforce foreign keys unless PRAGMA foreign_keys is
+	// enabled per connection, so ON DELETE CASCADE never fires on its own;
+	// remove the associated embedding explicitly in the same transaction.
+	_, err = tx.ExecContext(ctx,
+		`DELETE FROM embeddings WHERE chunk_id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("deleting embedding: %w", err)
+	}
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("committing: %w", err)
@@ -597,6 +605,15 @@ func (s *SQLiteStore) DeleteDocument(ctx context.Context, docID string) error {
 		return fmt.Errorf("beginning transaction: %w", err)
 	}
 	defer tx.Rollback()
+
+	// Remove the embeddings first so the subquery still sees the chunks.
+	// (See DeleteChunk: SQLite FK cascade is not enforced without the
+	// per-connection pragma.)
+	_, err = tx.ExecContext(ctx,
+		`DELETE FROM embeddings WHERE chunk_id IN (SELECT id FROM chunks WHERE document_ref = ?)`, docID)
+	if err != nil {
+		return fmt.Errorf("deleting document embeddings: %w", err)
+	}
 
 	_, err = tx.ExecContext(ctx,
 		`DELETE FROM chunks WHERE document_ref = ?`, docID)
