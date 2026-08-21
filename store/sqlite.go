@@ -197,7 +197,10 @@ func (s *SQLiteStore) Upload(ctx context.Context, doc *core.Document, content st
 	}
 	defer tx.Rollback()
 
-	now := time.Now()
+	// RFC3339 UTC. A bare "Z" in a layout string is a literal, not a
+	// timezone token, so formatting local time with "2006-01-02T15:04:05Z"
+	// would stamp local time with a fake UTC marker.
+	now := time.Now().UTC().Format(time.RFC3339)
 	for _, chunk := range chunks {
 		metaJSON, err := serializeMetadata(chunk.Metadata)
 		if err != nil {
@@ -208,7 +211,7 @@ func (s *SQLiteStore) Upload(ctx context.Context, doc *core.Document, content st
 			`INSERT OR REPLACE INTO chunks (id, content, document_ref, chunk_index, namespace, metadata, created_at, updated_at)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 			chunk.ID, chunk.Content, chunk.DocumentRef, chunk.ChunkIndex,
-			ns, metaJSON, now.Format("2006-01-02T15:04:05Z"), now.Format("2006-01-02T15:04:05Z"))
+			ns, metaJSON, now, now)
 		if err != nil {
 			return fmt.Errorf("inserting chunk: %w", err)
 		}

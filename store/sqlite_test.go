@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/deagy/recall/core"
 	"github.com/deagy/recall/embedder"
@@ -684,4 +685,36 @@ func TestSQLiteStore_LegacyMetadataUnwrap(t *testing.T) {
 	assert.Equal(t, core.String{Value: "new.txt"}, round["source"], "string must round-trip")
 	assert.Equal(t, core.Number{Value: 4.5}, round["score"], "number must round-trip")
 	assert.Equal(t, core.Boolean{Value: true}, round["active"], "boolean must round-trip")
+}
+
+// TestSQLiteStore_Upload_TimestampsAreUTC verifies that created_at/updated_at
+// are real UTC instants. A bare "Z" in a layout string is a literal, not a
+// timezone token, so the old code stamped local wall-clock time with a fake
+// UTC marker; on a non-UTC host the stored value was off by the zone offset.
+func TestSQLiteStore_Upload_TimestampsAreUTC(t *testing.T) {
+	s := newTestSQLiteStore(t)
+	ctx := context.Background()
+
+	before := time.Now().UTC()
+	doc := core.NewDocument("doc1", "Test", "test.txt")
+	require.NoError(t, s.Upload(ctx, doc, "Timestamp correctness check content that is long enough to be chunked."))
+
+	var createdAt, updatedAt string
+	require.NoError(t, s.db.QueryRow(
+		`SELECT created_at, updated_at FROM chunks WHERE id = ?`, "doc1::chunk-0",
+	).Scan(&createdAt, &updatedAt))
+
+	for name, ts := range map[string]string{"created_at": createdAt, "updated_at": updatedAt} {
+		t.Run(name, func(t *testing.T) {
+			assert.True(t, strings.HasSuffix(ts, "Z"), "%s must use a Z (UTC) suffix: %q", name, ts)
+			parsed, err := time.Parse(time.RFC3339, ts)
+			require.NoError(t, err, "%s must be valid RFC3339: %q", name, ts)
+			assert.Equal(t, time.UTC, parsed.Location(), "%s must carry a real UTC zone, not a fake Z", name)
+			// The stored value must be a real instant, not local wall-clock
+			// time with a fake Z marker (which would be off by the local
+			// zone offset).
+			assert.WithinDuration(t, before, parsed, 5*time.Minute,
+				"%s must be within 5 minutes of now (UTC): %q", name, ts)
+		})
+	}
 }
