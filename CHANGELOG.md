@@ -12,6 +12,28 @@ note in [docs/MIGRATION.md](./docs/MIGRATION.md).
 
 ### Fixed
 
+- `store`: `MemoryStore.DeleteDocument` no longer iterates the live
+  `docChunks[docID]` map outside the store lock. It now snapshots the
+  document's chunk IDs into a slice while holding the lock and iterates
+  the snapshot, eliminating a fatal
+  `concurrent map iteration and map write` when a concurrent `Upload`
+  writes to the same document's chunk map (reproduced under `-race`).
+  IDs added by an in-flight upload after the snapshot are left for a
+  subsequent delete.
+- `ingest`: `Incremental.Save` no longer marshals the live `hashes` map
+  outside the lock. It copies the map under the lock, marshals the copy,
+  and re-arms `dirty` on a failed encode or write so a failed save does
+  not lose the pending state (previously `dirty` was cleared before
+  marshaling). The dead `ids`/`sort.Strings` code was removed.
+  `concurrent map iteration and map write` reproduced under `-race`
+  pre-fix.
+- Regression tests: `TestMemoryStore_DeleteDocument_ConcurrentUpload`
+  (gated-embedder coordination of Upload's write burst with concurrent
+  `DeleteDocument` iterations) and
+  `TestIncremental_Save_ConcurrentMark` (concurrent `Mark` during
+  `Save`) plus `TestIncremental_Save_FailureKeepsDirty` (failed save
+  keeps state dirty).
+
 - **Breaking** `index`/`store`: deleting a missing chunk now reports
   `core.ErrNotFound` instead of returning `nil`. `MemoryIndex.Delete`
   (plain and HNSW modes) and `MemoryStore.DeleteChunk` (which now tries

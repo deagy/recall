@@ -14,20 +14,24 @@ Sizes: S ≤ 1h · M ≤ half day · L > half day.
 
 ## Phase 1 — Data races (P0) 🔴
 
+**Status: complete (2026-08-21)** — 1.1 + 1.2 in `ebd2221` (both are the same defect class, S-sized, low-risk). Validation: full repo `go test ./... -count=1` green (32/32 packages); `-race` green for `ingest` (full package) and `store` (all 168 tests, run in chunks; the pre-existing heavyweight `TestSQLiteStore_ConcurrentUploadAndSearch` exceeds the sandbox's 30s race budget and is covered by CI's unlimited `go test -race`); `go vet ./...` and `gofmt -l .` clean; coverage store 85.3% / ingest 92.3%.
+
+Detection caveat (documented in both test comments): the Go runtime detects concurrent map *iteration* vs *write* only via the per-map `writing` flag probe on each iteration step — the maps package carries no `-race` annotations on iteration — so the pre-fix fatal is a probabilistic red, not a deterministic one. `TestIncremental_Save_ConcurrentMark` is a strong guard (high probe rate: concurrent `Mark` writes land densely inside each marshal's iteration); `TestMemoryStore_DeleteDocument_ConcurrentUpload` coordinates the overlap on every attempt (gated embedder + index-lock parking) and maximizes, but does not guarantee, the pre-fix red in a single run.
+
 Goal: eliminate the two confirmed race conditions and lock them in with `-race` regression tests.
 
 ### 1.1 `MemoryStore.DeleteDocument` iterates `docChunks` map unlocked
 - **File:** `store/memory.go:299-326` (iteration at :314; racing write at :107)
 - **Defect:** reads `chunkIDs := s.docChunks[docID]` under `s.mu`, unlocks, then iterates the live map while a concurrent `Upload` writes to it → `fatal error: concurrent map iteration and map write` (reproduced with `-race`).
-- **Fix:** snapshot the chunk IDs into a fresh slice while holding `s.mu`, then iterate the snapshot. Keep the index deletes outside the store lock (they take per-index locks).
-- **Tests:** `TestMemoryStore_DeleteDocument_ConcurrentUpload` — goroutines racing `Upload(doc1)` and `DeleteDocument(doc1)`; must pass `go test -race`.
+- **Fix (as shipped):** snapshot the chunk IDs into a fresh slice while holding `s.mu`, then iterate the snapshot. Index deletes stay outside the store lock (they take per-index locks). Preserves the Phase 2.2 not-found/pruning behavior.
+- **Tests (as shipped):** `TestMemoryStore_DeleteDocument_ConcurrentUpload` — a `gateEmbedder` parks the Upload in `EmbedBatch` (post-chunking, pre-indexing), two `DeleteDocument` goroutines start iterating the live chunk map, the Upload is released so its `AddBatch` parks the deletes mid-iteration on the index lock and the `docChunks` write burst lands inside the iterations. 30 coordinated attempts.
 - **Size:** S · **Risk:** low
 
 ### 1.2 `Incremental.Save` marshals the live map outside the lock
 - **File:** `ingest/incremental.go:95-125`
 - **Defect:** `st.Documents` captures `inc.hashes` by reference; `json.MarshalIndent` runs after `Unlock()` while `Mark()` may write (reproduced with `-race`). Secondary: `ids` slice (lines 105-109) is dead code; `dirty=false` is set *before* marshaling, so an encode/write failure loses the pending state.
-- **Fix:** copy the map under the lock; marshal the copy; clear `dirty` only after `os.WriteFile` succeeds (re-arm on failure). Delete the unused `ids` code.
-- **Tests:** `TestIncremental_Save_ConcurrentMark` under `-race`; a failed Save keeps `dirty` (unwritable path).
+- **Fix (as shipped):** copy the map under the lock; marshal the copy; re-arm `dirty` on a failed encode **or** write (dirty is cleared with the snapshot, re-set on failure paths). Removed the unused `ids`/`sort` code (and the `sort` import).
+- **Tests (as shipped):** `TestIncremental_Save_ConcurrentMark` under `-race` (200 concurrent `Mark`s racing 200 `Save`s, final quiet save persists all 200); `TestIncremental_Save_FailureKeepsDirty` (unwritable path keeps `dirty`).
 - **Size:** S · **Risk:** low
 
 ### Phase 1 validation
