@@ -40,6 +40,8 @@ type SearchOptions struct {
 	Filters []Filter
 
 	// MinScore is the minimum relevance score for a result to be included.
+	// In hybrid mode it applies to the fused score, not the raw vector or
+	// keyword scores.
 	MinScore float64
 
 	// Hybrid enables BM25 keyword search combined with vector similarity.

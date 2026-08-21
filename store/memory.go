@@ -153,11 +153,16 @@ func (s *MemoryStore) SearchHybrid(ctx context.Context, query string, opts index
 		return nil, fmt.Errorf("embedding query: %w", err)
 	}
 
-	// Perform vector search across all namespaces
+	// Perform vector search across all namespaces. The vector leg runs with
+	// MinScore disabled: in hybrid mode MinScore applies to the *fused*
+	// score only (matching SQLite, which fuses over all chunks), so every
+	// chunk must contribute its true vector score to the fusion.
+	vecOpts := opts
+	vecOpts.MinScore = 0
 	var vecResults []index.SearchResult
 	s.mu.RLock()
 	for _, idx := range s.indexes {
-		results, err := idx.Search(ctx, queryEmbed, opts)
+		results, err := idx.Search(ctx, queryEmbed, vecOpts)
 		if err != nil {
 			s.mu.RUnlock()
 			return nil, err
@@ -238,7 +243,7 @@ func fuseMap(vecResults []index.SearchResult, bm25Scores map[string]float64, loo
 			// 1 = pure BM25.
 			fusedScore = (1-opts.BM25Weight)*vecScoreMap[id] + opts.BM25Weight*bm25Scores[id]
 		}
-		if fusedScore <= 0 {
+		if fusedScore <= 0 || fusedScore < opts.MinScore {
 			continue
 		}
 

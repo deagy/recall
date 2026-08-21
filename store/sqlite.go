@@ -294,6 +294,9 @@ func (s *SQLiteStore) searchHNSW(ctx context.Context, embed []float32, opts inde
 			continue
 		}
 		sim := cosineSimilarity(embed, chunk.Embedding)
+		if sim < opts.MinScore {
+			continue
+		}
 		if !matchesFilters(sim, chunk, opts.Filters) {
 			continue
 		}
@@ -357,6 +360,9 @@ func (s *SQLiteStore) Search(ctx context.Context, query string, opts index.Searc
 
 		embedding := unpackEmbedding(embBytes)
 		sim := cosineSimilarity(queryEmbed, embedding)
+		if sim < opts.MinScore {
+			continue
+		}
 
 		chunk := &core.Chunk{
 			ID:          chunkID,
@@ -510,7 +516,7 @@ func (s *SQLiteStore) fuseFTS5Results(ctx context.Context, query []float32, ftsR
 			// 1 = pure BM25.
 			fusedScore = (1-opts.BM25Weight)*vecScoreMap[chunkID] + opts.BM25Weight*ftsResults[chunkID]
 		}
-		if fusedScore <= 0 {
+		if fusedScore <= 0 || fusedScore < opts.MinScore {
 			continue
 		}
 		if !matchesFilters(fusedScore, chunk, opts.Filters) {
