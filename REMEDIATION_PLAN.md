@@ -42,6 +42,8 @@ go vet ./... && gofmt -l .
 
 ## Phase 2 — Core correctness bugs (P1) 🟠
 
+**Status: complete (2026-08-19)** — 2.1 `561bf44` · 2.2 `3db8bd4` · 2.3 `77686b9` · 2.4 `4ab47c2` · 2.5 `a4e187b` · docs `0296f1f`. Validation: `go test ./bm25/... ./store/... ./index/... -count=1` green, `-race` green, full repo suite green; coverage bm25 95.8% / store 85.3% / index 91.9%. Note: 2.2 left `DeleteDocument` iterating the live `docChunks[docID]` map — the 1.1 snapshot fix must preserve the new not-found/pruning behavior.
+
 ### 2.1 BM25 document-count drift
 - **File:** `bm25/bm25.go:94-117` (`AddDocument`), `176-199` (`RemoveDocument`)
 - **Defect:** re-adding an existing docID increments `docCount`/`docFreq` again (reproduced: `Count()==2` after two adds of the same ID) and corrupts IDF/avgDocLen; `RemoveDocument` decrements `docCount` even for unknown IDs (reproduced: `Count()==0`). Reachable via `MemoryIndex.Add` overwriting an existing chunk ID.
