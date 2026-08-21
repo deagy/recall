@@ -2,9 +2,12 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/deagy/recall/chunker"
 	"github.com/deagy/recall/core"
@@ -1037,5 +1040,117 @@ func TestMemoryStore_HybridSearchAppliesFiltersToKeywordOnlyMatches(t *testing.T
 	for _, r := range results {
 		assert.Equal(t, "test", r.Chunk.GetMetadataString(core.MetadataKeyNamespace),
 			"keyword-only hybrid match %q leaked outside the allowed namespace", r.Chunk.ID)
+	}
+}
+
+// gateEmbedder blocks EmbedBatch on a per-attempt gate once armed, so a
+// test can hold an Upload between chunking and indexing while a
+// DeleteDocument runs concurrently.
+type gateEmbedder struct {
+	inner   embedder.Embedder
+	armed   atomic.Bool
+	inEmbed atomic.Bool
+	gate    chan struct{}
+}
+
+func (g *gateEmbedder) Embed(ctx context.Context, text string) ([]float32, error) {
+	return g.inner.Embed(ctx, text)
+}
+
+func (g *gateEmbedder) EmbedBatch(ctx context.Context, texts []string) ([][]float32, error) {
+	g.inEmbed.Store(true)
+	if g.armed.Load() {
+		<-g.gate
+	}
+	return g.inner.EmbedBatch(ctx, texts)
+}
+
+func (g *gateEmbedder) Dimension() int { return g.inner.Dimension() }
+
+// TestMemoryStore_DeleteDocument_ConcurrentUpload is the Phase 1 (1.1)
+// regression test: DeleteDocument must snapshot the document's chunk IDs
+// under the store lock before iterating. Iterating the live
+// docChunks[docID] map while a concurrent Upload writes to it is a fatal
+// "concurrent map iteration and map write".
+//
+// The test coordinates the overlap on every attempt: it holds the Upload
+// parked in EmbedBatch (after chunking, before indexing), starts two
+// DeleteDocuments so their live-map iterations begin, then releases the
+// Upload so its AddBatch parks the deletes mid-iteration on the index
+// lock and the docChunks write burst that follows lands inside the
+// iterations.
+//
+// Detection note: the Go runtime catches concurrent map iteration and map
+// write only through the per-map "writing" flag probe on each iteration
+// step (the maps package carries no -race annotations on iteration), so
+// the pre-fix fatal fires only when a write lands inside the microsecond
+// probe window — a probabilistic, not deterministic, red. The overlap is
+// engineered to maximize that window; run the test in a loop to stress
+// the pre-fix behavior.
+func TestMemoryStore_DeleteDocument_ConcurrentUpload(t *testing.T) {
+	// ~300 chunks per document so the delete's iteration runs long enough
+	// to span the upload's AddBatch lock hold plus its write burst.
+	var content strings.Builder
+	for i := 0; i < 13650; i++ {
+		fmt.Fprintf(&content, "Concurrent upload sentence %d for the map race regression test. ", i)
+		if i%10 == 9 {
+			content.WriteString("\n\n")
+		}
+	}
+
+	emb := &gateEmbedder{inner: embedder.NewMockEmbedder(4)}
+	cfg := Config{
+		Namespace:      "test",
+		Embedder:       emb,
+		ChunkerFactory: chunker.NewFixed,
+	}
+	s, err := NewMemoryStore(cfg)
+	require.NoError(t, err, "NewMemoryStore should not fail")
+	ctx := context.Background()
+
+	// Seed the document before arming the gate so the chunk map and the
+	// index entries exist for every attempt.
+	require.NoError(t, s.Upload(ctx, core.NewDocument("doc1", "Concurrent", "test.txt"), content.String()))
+
+	for attempt := 0; attempt < 30; attempt++ {
+		emb.gate = make(chan struct{})
+		emb.inEmbed.Store(false)
+		emb.armed.Store(true)
+
+		uploadErr := make(chan error, 1)
+		go func() {
+			uploadErr <- s.Upload(ctx, core.NewDocument("doc1", "Concurrent", "test.txt"), content.String())
+		}()
+
+		// Wait until the upload is parked in EmbedBatch, then start the
+		// delete: it snapshots the live chunk map and begins iterating,
+		// its per-chunk idx.Delete calls contending with the upload's
+		// upcoming AddBatch for the index lock.
+		for !emb.inEmbed.Load() {
+			time.Sleep(time.Microsecond)
+		}
+		// Two concurrent deleters double the probe rate inside the
+		// write burst window, with offset phases.
+		deleteErr := make(chan error, 2)
+		go func() {
+			deleteErr <- s.DeleteDocument(ctx, "doc1")
+		}()
+		go func() {
+			deleteErr <- s.DeleteDocument(ctx, "doc1")
+		}()
+
+		// Let the deletes get well into their iterations, then release
+		// the upload: AddBatch holds the index lock (parking the deletes
+		// mid-iteration) and the docChunks write burst that follows lands
+		// inside the live-map iteration pre-fix.
+		time.Sleep(100 * time.Microsecond)
+		close(emb.gate)
+
+		require.NoError(t, <-uploadErr, "upload should succeed")
+		for i := 0; i < 2; i++ {
+			err := <-deleteErr
+			require.True(t, err == nil || errors.Is(err, core.ErrNotFound),
+				"delete should succeed or report not found, got: %v", err)
+		}
 	}
 }

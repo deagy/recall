@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"sort"
 	"sync"
 )
 
@@ -102,23 +101,33 @@ func (inc *Incremental) Save() error {
 		inc.mu.Unlock()
 		return nil
 	}
-	ids := make([]string, 0, len(inc.hashes))
-	for id := range inc.hashes {
-		ids = append(ids, id)
+	// Copy the hash map under the lock and clear dirty with the snapshot:
+	// marshaling the live map after Unlock would race with concurrent
+	// Mark/Forget writes. On a failed encode or write, dirty is re-armed
+	// below so the pending state is retried on the next Save.
+	docs := make(map[string]string, len(inc.hashes))
+	for id, h := range inc.hashes {
+		docs[id] = h
 	}
-	sort.Strings(ids)
+	inc.dirty = false
+	inc.mu.Unlock()
+
 	st := struct {
 		Version   int               `json:"version"`
 		Documents map[string]string `json:"documents"`
-	}{Version: 1, Documents: inc.hashes}
-	inc.dirty = false
-	inc.mu.Unlock()
+	}{Version: 1, Documents: docs}
 	data, err := json.MarshalIndent(st, "", "  ")
 	if err != nil {
+		inc.mu.Lock()
+		inc.dirty = true
+		inc.mu.Unlock()
 		return fmt.Errorf("ingest: encode incremental: %w", err)
 	}
 	data = append(data, '\n')
 	if err := os.WriteFile(inc.path, data, 0o600); err != nil {
+		inc.mu.Lock()
+		inc.dirty = true
+		inc.mu.Unlock()
 		return fmt.Errorf("ingest: save incremental %s: %w", inc.path, err)
 	}
 	return nil

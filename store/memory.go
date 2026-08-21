@@ -341,7 +341,15 @@ func (s *MemoryStore) DeleteDocument(ctx context.Context, docID string) error {
 		s.mu.Unlock()
 		return core.ErrNotFound
 	}
-	// Remove from indexes
+	// Snapshot the chunk IDs into a fresh slice while holding the lock:
+	// a concurrent Upload may add IDs to the live docChunks[docID] map,
+	// and iterating that map after Unlock would be a concurrent map
+	// iteration and map write (fatal). IDs added after the snapshot are
+	// left for a subsequent delete.
+	ids := make([]string, 0, len(chunkIDs))
+	for id := range chunkIDs {
+		ids = append(ids, id)
+	}
 	indexes := make([]*index.MemoryIndex, 0, len(s.indexes))
 	for _, idx := range s.indexes {
 		indexes = append(indexes, idx)
@@ -349,7 +357,7 @@ func (s *MemoryStore) DeleteDocument(ctx context.Context, docID string) error {
 	s.mu.Unlock()
 
 	firstErr := error(nil)
-	for id := range chunkIDs {
+	for _, id := range ids {
 		for _, idx := range indexes {
 			err := idx.Delete(ctx, id)
 			// A chunk belongs to a single namespace index; the other
