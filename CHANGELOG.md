@@ -10,6 +10,36 @@ note in [docs/MIGRATION.md](./docs/MIGRATION.md).
 
 ## [Unreleased]
 
+### Fixed
+
+- `reasoning`: `Engine.InferRelations` now honors the configured
+  `MinConfidence` (previously validated but never applied; inferences were
+  filtered by an arbitrary, order-dependent threshold derived from the first
+  stored relation). The `Graph.Relations()` copy is also hoisted out of the
+  rule loop (was a full locked copy per relation — O(R²) allocations).
+- `chunker`: `FixedChunker` no longer emits chunks larger than
+  `MaxTokens*4` runes when a single part exceeds the limit (oversized parts
+  are now pre-split regardless of accumulated state); the join size check
+  accounts for separator length. A zero-value `Separator` now defaults to
+  `"\n\n"` at construction, so `Config{}` no longer joins parts with an
+  empty string.
+- `fuse`: `WeightedFusion.Fuse` with more than two score maps now splits
+  `(1-alpha)` evenly across the remaining maps, so per-map weights always
+  sum to 1 (previously every map after the first received the full
+  `1-alpha`).
+- `docs`: `Engine.ExplorePaths` godoc corrected — it returns a
+  breadth-first search tree (at most one path per intermediate entity), not
+  all simple paths between the endpoints.
+
+### Behavior
+
+- `reasoning`: inferences below `MinConfidence` (default 0.3) are now
+  dropped from `InferRelations`/`Reason` results; `/graph/reason` output may
+  exclude low-confidence inferences that were previously returned.
+- `chunker`: `FixedChunker` chunk boundaries shift slightly (separator-aware
+  packing, pre-split oversized parts); document uploads may chunk
+  differently.
+
 ## [0.2.0] — 2026-08-21
 
 Remediation release: Phase 1 data-race fixes and Phase 2 core-correctness

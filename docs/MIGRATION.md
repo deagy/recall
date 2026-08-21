@@ -66,7 +66,15 @@ Back up first: `recall store backup`.
 
 ### Next release (unreleased)
 
-_No changes recorded yet._
+**Behavioral changes**
+
+- `reasoning`: `Engine.InferRelations`/`Reason` now drop inferred relations
+  with confidence below the configured `MinConfidence` (default 0.3);
+  previously the threshold was validated but never applied, so
+  `/graph/reason` results may now exclude low-confidence inferences.
+- `chunker`: `FixedChunker` chunk boundaries shift slightly — oversized
+  parts are pre-split so chunks respect `MaxTokens*4` runes, and a
+  zero-value `Separator` now defaults to `"\n\n"`.
 
 ### v0.2.0
 

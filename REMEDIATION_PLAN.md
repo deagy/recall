@@ -145,6 +145,8 @@ go test ./distributed/... -race -count=1
 
 ## Phase 4 — Reasoning & search semantics (P2) 🟡
 
+**Status: complete (2026-08-21)** — 4.1 `8ce60fe` · 4.2 `42b9a85` · 4.3 `a5e5184` · 4.4 `f4e73f3`. Validation: `go test ./reasoning/... ./fuse/... ./chunker/... -count=1` green plus downstream consumers (`pipeline`, `ingest`, `app`, `api`) green; `go vet ./...` and `gofmt -l .` clean. Behavioral changes (reasoning now filters at `MinConfidence`, chunk boundaries shift) are noted in CHANGELOG `[Unreleased]` and `docs/MIGRATION.md` for the next release.
+
 ### 4.1 Reasoning engine: dead `MinConfidence`, arbitrary threshold
 - **File:** `reasoning/engine.go:13-56, 91-115`
 - **Defect:** `Config.MinConfidence` is validated but never stored on `Engine`; `InferRelations` filters with `ir.Weight >= e.graph.Relations()[0].Weight*0.1` — arbitrary, order-dependent, and calls `e.graph.Relations()` (full locked copy) inside the loop → O(R²) allocations.
