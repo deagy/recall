@@ -10,6 +10,12 @@ note in [docs/MIGRATION.md](./docs/MIGRATION.md).
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-08-21
+
+Remediation release: Phase 1 data-race fixes and Phase 2 core-correctness
+fixes. Includes one **Breaking** change; see the v0.2.0 notes in
+[docs/MIGRATION.md](./docs/MIGRATION.md).
+
 ### Fixed
 
 - `store`: `MemoryStore.DeleteDocument` no longer iterates the live

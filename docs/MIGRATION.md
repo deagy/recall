@@ -4,9 +4,10 @@ This guide explains Recall's versioning policy and how to upgrade between
 releases. Per-release breaking changes and their migration steps are recorded
 here as they happen.
 
-> **Status:** Recall has not tagged a release yet. All APIs are evolving on
-> `main` toward `v0.1.0`. Until then, pin dependencies by commit or pseudo-
-> version if you need stability.
+> **Status:** Latest release is **v0.2.0** (2026-08-21). Recall is
+> pre-1.0: minor releases may contain breaking changes as APIs stabilize;
+> they are always listed here and in the [CHANGELOG](../CHANGELOG.md) with a
+> **Breaking** label.
 
 ## Versioning Policy
 
@@ -63,10 +64,11 @@ Back up first: `recall store backup`.
 
 ## Release Notes
 
-_No releases have been published yet. Use the template below when adding
-entries:_
-
 ### Next release (unreleased)
+
+_No changes recorded yet._
+
+### v0.2.0
 
 **Breaking changes**
 
