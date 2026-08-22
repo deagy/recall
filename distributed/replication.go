@@ -2,6 +2,7 @@ package distributed
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -78,6 +79,39 @@ func (rm *ReplicationManager) ReplicateData(ctx context.Context, shardID string,
 	return results, nil
 }
 
+// getOrCreateReplicaShard returns the deterministic replica shard for nodeID,
+// creating it on first use. Reusing an existing replica shard makes
+// replication idempotent: repeated ReplicateData calls update the same shard
+// instead of accumulating unbounded duplicates, and the reported ReplicaID
+// always resolves to a real shard.
+func (rm *ReplicationManager) getOrCreateReplicaShard(nodeID, replicaShardID string) (*Shard, error) {
+	if shard, exists := rm.shardManager.GetShard(replicaShardID); exists {
+		return shard, nil
+	}
+	shard, err := rm.shardManager.CreateShardWithID(nodeID, replicaShardID)
+	if err != nil {
+		if !errors.Is(err, ErrShardExists) {
+			return nil, err
+		}
+		// A concurrent replication created the same shard first; reuse it.
+		shard, exists := rm.shardManager.GetShard(replicaShardID)
+		if !exists {
+			return nil, err
+		}
+		return shard, nil
+	}
+	return shard, nil
+}
+
+// storeInShard copies data into shard under its write lock.
+func storeInShard(shard *Shard, data map[string]*core.Chunk) {
+	shard.mu.Lock()
+	for k, v := range data {
+		shard.Data[k] = v
+	}
+	shard.mu.Unlock()
+}
+
 // replicatePrimaryReplica replicates data to a primary node and its replicas.
 func (rm *ReplicationManager) replicatePrimaryReplica(ctx context.Context, shardID string, data map[string]*core.Chunk) []ReplicationResult {
 	var results []ReplicationResult
@@ -105,12 +139,16 @@ func (rm *ReplicationManager) replicatePrimaryReplica(ctx context.Context, shard
 		Success: true,
 	})
 
-	// Get replica nodes
+	// Get replica nodes. The ring's first node for this key is not
+	// necessarily the node hosting the primary shard, so the primary is
+	// skipped by node ID rather than by list position.
 	replicaNodes := rm.cluster.GetReplicaNodes(shardID)
-	for _, node := range replicaNodes[1:] { // Skip primary
-		// Create a replica shard
+	for _, node := range replicaNodes {
+		if node.ID == primaryShard.NodeID {
+			continue // primary shard already holds the data
+		}
 		replicaShardID := fmt.Sprintf("%s-replica-%s", shardID, node.ID)
-		replicaShard, err := rm.shardManager.CreateShard(node.ID)
+		replicaShard, err := rm.getOrCreateReplicaShard(node.ID, replicaShardID)
 		if err != nil {
 			results = append(results, ReplicationResult{
 				ShardID: shardID,
@@ -121,12 +159,7 @@ func (rm *ReplicationManager) replicatePrimaryReplica(ctx context.Context, shard
 			continue
 		}
 
-		// Store data in replica shard
-		replicaShard.mu.Lock()
-		for k, v := range data {
-			replicaShard.Data[k] = v
-		}
-		replicaShard.mu.Unlock()
+		storeInShard(replicaShard, data)
 
 		results = append(results, ReplicationResult{
 			ShardID:   shardID,
@@ -160,7 +193,7 @@ func (rm *ReplicationManager) replicateQuorum(ctx context.Context, shardID strin
 	for i := 0; i < quorumSize && i < len(allNodes); i++ {
 		node := allNodes[i]
 		replicaShardID := fmt.Sprintf("%s-quorum-%s", shardID, node.ID)
-		replicaShard, err := rm.shardManager.CreateShard(node.ID)
+		replicaShard, err := rm.getOrCreateReplicaShard(node.ID, replicaShardID)
 		if err != nil {
 			results = append(results, ReplicationResult{
 				ShardID: shardID,
@@ -171,12 +204,7 @@ func (rm *ReplicationManager) replicateQuorum(ctx context.Context, shardID strin
 			continue
 		}
 
-		// Store data in replica shard
-		replicaShard.mu.Lock()
-		for k, v := range data {
-			replicaShard.Data[k] = v
-		}
-		replicaShard.mu.Unlock()
+		storeInShard(replicaShard, data)
 
 		results = append(results, ReplicationResult{
 			ShardID:   shardID,
@@ -204,7 +232,7 @@ func (rm *ReplicationManager) replicateAllNodes(ctx context.Context, shardID str
 
 	for _, node := range allNodes {
 		replicaShardID := fmt.Sprintf("%s-all-%s", shardID, node.ID)
-		replicaShard, err := rm.shardManager.CreateShard(node.ID)
+		replicaShard, err := rm.getOrCreateReplicaShard(node.ID, replicaShardID)
 		if err != nil {
 			results = append(results, ReplicationResult{
 				ShardID: shardID,
@@ -215,12 +243,7 @@ func (rm *ReplicationManager) replicateAllNodes(ctx context.Context, shardID str
 			continue
 		}
 
-		// Store data in replica shard
-		replicaShard.mu.Lock()
-		for k, v := range data {
-			replicaShard.Data[k] = v
-		}
-		replicaShard.mu.Unlock()
+		storeInShard(replicaShard, data)
 
 		results = append(results, ReplicationResult{
 			ShardID:   shardID,
@@ -243,11 +266,20 @@ func (rm *ReplicationManager) GetReplicationStatus(ctx context.Context, shardID 
 		return 0, rm.replicationFactor, fmt.Errorf("shard %s not found", shardID)
 	}
 
-	// Count replicas
+	// Count replicas using the deterministic ID scheme of the active
+	// strategy: <shard>-<kind>-<node>.
+	kind := "replica"
+	switch rm.strategy {
+	case StrategyQuorum:
+		kind = "quorum"
+	case StrategyAllNodes:
+		kind = "all"
+	}
+
 	replicaCount := 0
 	allNodes := rm.cluster.GetOnlineNodes()
 	for _, node := range allNodes {
-		replicaShardID := fmt.Sprintf("%s-replica-%s", shardID, node.ID)
+		replicaShardID := fmt.Sprintf("%s-%s-%s", shardID, kind, node.ID)
 		if _, exists := rm.shardManager.GetShard(replicaShardID); exists {
 			replicaCount++
 		}

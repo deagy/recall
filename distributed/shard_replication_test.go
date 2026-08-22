@@ -2,6 +2,8 @@ package distributed
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/deagy/recall/chunker"
@@ -496,5 +498,173 @@ func TestScatterGatherSearchHybrid(t *testing.T) {
 	if _, err := ScatterGatherSearchHybrid(context.Background(), emptySM, []float32{1, 0, 0},
 		index.SearchOptions{}, nil); err == nil {
 		t.Error("expected error with no active shards")
+	}
+}
+
+// --- Phase 3.2: shard ID collisions ---
+
+func TestShardManager_CreateShard_MonotonicIDsAfterDelete(t *testing.T) {
+	_, sm := newTestShardCluster(1)
+
+	first, err := sm.CreateShard(fixedNodeID(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := sm.CreateShard(fixedNodeID(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Seed data so a map-entry collision would silently lose it.
+	second.Data["c1"] = chunkWithEmbed("c1", "keep", 1, 0, 0)
+
+	if err := sm.DeleteShard(first.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	third, err := sm.CreateShard(fixedNodeID(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if third.ID == first.ID {
+		t.Fatalf("auto ID %q was reused after deletion — collision risk", third.ID)
+	}
+	if sm.GetShardCount() != 2 {
+		t.Errorf("expected 2 shards after delete + create, got %d", sm.GetShardCount())
+	}
+	survivor, ok := sm.GetShard(second.ID)
+	if !ok || survivor.Data["c1"] == nil {
+		t.Error("surviving shard lost data after delete + recreate")
+	}
+}
+
+func TestShardManager_CreateShardWithID_ExistingIDFails(t *testing.T) {
+	_, sm := newTestShardCluster(1)
+
+	if _, err := sm.CreateShardWithID(fixedNodeID(0), "shard-x"); err != nil {
+		t.Fatal(err)
+	}
+	_, err := sm.CreateShardWithID(fixedNodeID(0), "shard-x")
+	if !errors.Is(err, ErrShardExists) {
+		t.Fatalf("expected ErrShardExists on duplicate ID, got %v", err)
+	}
+	shard, ok := sm.GetShard("shard-x")
+	if !ok || shard.NodeID != fixedNodeID(0) {
+		t.Error("existing shard must not be clobbered by a duplicate create")
+	}
+}
+
+// --- Phase 3.1: replication bookkeeping ---
+
+func TestReplicationManager_PrimaryReplica_Bookkeeping(t *testing.T) {
+	cluster, sm := newTestShardCluster(3)
+	rm := NewReplicationManager(cluster, sm, StrategyPrimaryReplica, 3)
+
+	primary, err := sm.CreateShardWithID(fixedNodeID(0), "shard-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	data := map[string]*core.Chunk{"chunk-b1": {ID: "chunk-b1", Content: "v1"}}
+	results, err := rm.ReplicateData(context.Background(), "shard-1", data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) == 0 || !results[0].Success || results[0].NodeID != primary.NodeID {
+		t.Fatalf("primary write must succeed first: %+v", results)
+	}
+
+	// Expected replicas: every ring replica node except the primary's node.
+	expected := map[string]bool{}
+	for _, node := range cluster.GetReplicaNodes("shard-1") {
+		if node.ID != primary.NodeID {
+			expected[node.ID] = true
+		}
+	}
+	if len(expected) == 0 {
+		t.Fatal("ring must assign at least one replica node for shard-1")
+	}
+	if got, want := len(results), 1+len(expected); got != want {
+		t.Fatalf("expected %d results (primary + %d replicas), got %d", want, len(expected), got)
+	}
+
+	for _, r := range results[1:] {
+		if !r.Success {
+			t.Fatalf("replica for %s failed: %+v", r.NodeID, r)
+		}
+		replica, ok := sm.GetShard(r.ReplicaID)
+		if !ok {
+			t.Fatalf("reported replica ID %q does not resolve to a shard", r.ReplicaID)
+		}
+		if replica.Data["chunk-b1"] == nil {
+			t.Errorf("replica %s is missing replicated data", r.ReplicaID)
+		}
+	}
+	// No replica shard may ever be created on the primary's node, regardless
+	// of where the ring places that node.
+	if _, exists := sm.GetShard(fmt.Sprintf("shard-1-replica-%s", primary.NodeID)); exists {
+		t.Error("replica shard created on the primary node")
+	}
+
+	// GetReplicationStatus must now count the replicas that were created.
+	got, want, err := rm.GetReplicationStatus(context.Background(), "shard-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != len(expected) || want != 3 {
+		t.Errorf("expected status (%d, 3), got (%d, %d)", len(expected), got, want)
+	}
+
+	before := sm.GetShardCount()
+
+	// Second replication: idempotent — no new shards, data updated in place.
+	data["chunk-b1"] = &core.Chunk{ID: "chunk-b1", Content: "v2"}
+	results, err = rm.ReplicateData(context.Background(), "shard-1", data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range results {
+		if !r.Success {
+			t.Fatalf("second replicate failed for %s: %+v", r.NodeID, r)
+		}
+	}
+	if after := sm.GetShardCount(); after != before {
+		t.Errorf("second replicate must not create new shards: before=%d after=%d", before, after)
+	}
+	for nodeID := range expected {
+		replica, _ := sm.GetShard(fmt.Sprintf("shard-1-replica-%s", nodeID))
+		if replica.Data["chunk-b1"].Content != "v2" {
+			t.Errorf("replica %s was not updated on the second replicate", replica.ID)
+		}
+	}
+}
+
+func TestReplicationManager_RepeatedReplication_ReusableShards(t *testing.T) {
+	for _, strategy := range []ReplicationStrategy{StrategyQuorum, StrategyAllNodes} {
+		t.Run(string(strategy), func(t *testing.T) {
+			cluster, sm := newTestShardCluster(3)
+			rm := NewReplicationManager(cluster, sm, strategy, 3)
+
+			data := map[string]*core.Chunk{"chunk-r1": {ID: "chunk-r1", Content: "v1"}}
+			if _, err := rm.ReplicateData(context.Background(), "shard-r", data); err != nil {
+				t.Fatal(err)
+			}
+			before := sm.GetShardCount()
+
+			results, err := rm.ReplicateData(context.Background(), "shard-r", data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, r := range results {
+				if !r.Success {
+					t.Fatalf("%s: %+v", strategy, r)
+				}
+				if _, ok := sm.GetShard(r.ReplicaID); !ok {
+					t.Fatalf("%s: reported replica ID %q does not exist", strategy, r.ReplicaID)
+				}
+			}
+			if after := sm.GetShardCount(); after != before {
+				t.Errorf("%s: repeated replicate grew shard count %d -> %d", strategy, before, after)
+			}
+		})
 	}
 }

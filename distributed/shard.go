@@ -2,6 +2,7 @@ package distributed
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
@@ -9,6 +10,10 @@ import (
 	"github.com/deagy/recall/core"
 	"github.com/deagy/recall/index"
 )
+
+// ErrShardExists is returned by CreateShardWithID when a shard with the same
+// explicit ID is already registered with the manager.
+var ErrShardExists = errors.New("shard already exists")
 
 // Shard represents a shard in the distributed storage.
 type Shard struct {
@@ -31,9 +36,13 @@ func NewShard(id, nodeID string) *Shard {
 
 // ShardManager manages shards across the cluster.
 type ShardManager struct {
-	mu      sync.RWMutex
-	shards  map[string]*Shard
-	cluster *Cluster
+	mu     sync.RWMutex
+	shards map[string]*Shard
+	// nextShardSeq is a monotonic counter for auto-generated shard IDs. It
+	// never decreases, so an ID cannot be reused after a shard is deleted
+	// (unlike len(shards)+1, which shrinks on delete).
+	nextShardSeq int
+	cluster      *Cluster
 }
 
 // NewShardManager creates a new shard manager.
@@ -144,7 +153,11 @@ func (sm *ShardManager) CreateShard(nodeID string) (*Shard, error) {
 	return sm.CreateShardWithID(nodeID, "")
 }
 
-// CreateShardWithID creates a new shard with a specific ID and assigns it to a node.
+// CreateShardWithID creates a new shard with a specific ID and assigns it to a
+// node. An empty shardID is generated from a monotonic per-manager counter, so
+// IDs are unique across the manager's lifetime even after deletions. An
+// explicit shardID that is already registered returns ErrShardExists instead
+// of silently overwriting the existing shard.
 func (sm *ShardManager) CreateShardWithID(nodeID string, shardID string) (*Shard, error) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
@@ -159,7 +172,10 @@ func (sm *ShardManager) CreateShardWithID(nodeID string, shardID string) (*Shard
 	}
 
 	if shardID == "" {
-		shardID = fmt.Sprintf("shard-%s-%d", nodeID, len(sm.shards)+1)
+		shardID = fmt.Sprintf("shard-%s-%d", nodeID, sm.nextShardSeq)
+		sm.nextShardSeq++
+	} else if _, exists := sm.shards[shardID]; exists {
+		return nil, fmt.Errorf("%w: %s", ErrShardExists, shardID)
 	}
 
 	shard := NewShard(shardID, nodeID)
@@ -201,7 +217,15 @@ func (sm *ShardManager) StoreChunk(ctx context.Context, chunk *core.Chunk) error
 		var err error
 		shard, err = sm.CreateShardWithID(nodeID, shardID)
 		if err != nil {
-			return fmt.Errorf("failed to create shard: %w", err)
+			if !errors.Is(err, ErrShardExists) {
+				return fmt.Errorf("failed to create shard: %w", err)
+			}
+			// A concurrent StoreChunk created the same shard between the
+			// existence check and creation; reuse it instead of failing.
+			shard, exists = sm.GetShard(shardID)
+			if !exists {
+				return fmt.Errorf("failed to create shard: %w", err)
+			}
 		}
 	}
 
