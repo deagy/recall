@@ -104,14 +104,32 @@ func (ds *DistributedStore) Upload(ctx context.Context, doc *core.Document, cont
 	return nil
 }
 
-// Search finds the most relevant chunks for a query string (vector similarity only).
+// queryEmbedding embeds query text using the store's embedder. When no
+// embedder is configured it falls back to generateQueryEmbedding, a lexical
+// approximation that keeps the store usable without an embedding backend (its
+// vector scores are not semantically meaningful).
+func (ds *DistributedStore) queryEmbedding(ctx context.Context, query string) ([]float32, error) {
+	if ds.embedder == nil {
+		return generateQueryEmbedding(query), nil
+	}
+	embedding, err := ds.embedder.Embed(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	return embedding, nil
+}
+
+// Search finds the most relevant chunks for a query string (vector similarity
+// only). The query is embedded with the store's embedder.
 func (ds *DistributedStore) Search(ctx context.Context, query string, opts index.SearchOptions) ([]index.SearchResult, error) {
 	if opts.TopK <= 0 {
 		opts.TopK = 10
 	}
 
-	// Generate query embedding from the query string
-	queryEmbedding := generateQueryEmbedding(query)
+	queryEmbedding, err := ds.queryEmbedding(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to embed query: %w", err)
+	}
 
 	scgConfig := &ScatterGatherConfig{
 		FanOut:             0,
@@ -123,14 +141,18 @@ func (ds *DistributedStore) Search(ctx context.Context, query string, opts index
 	return ScatterGatherSearch(ctx, ds.shardManager, queryEmbedding, opts, scgConfig)
 }
 
-// SearchHybrid performs hybrid search combining vector similarity and BM25 keyword scores.
+// SearchHybrid performs hybrid search combining vector similarity and BM25
+// keyword scores. The query is embedded with the store's embedder, and both
+// the query text and its embedding are fanned out to the shards.
 func (ds *DistributedStore) SearchHybrid(ctx context.Context, query string, opts index.SearchOptions) ([]index.SearchResult, error) {
 	if opts.TopK <= 0 {
 		opts.TopK = 10
 	}
 
-	// Generate query embedding from the query string
-	queryEmbedding := generateQueryEmbedding(query)
+	queryEmbedding, err := ds.queryEmbedding(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to embed query: %w", err)
+	}
 
 	scgConfig := &ScatterGatherConfig{
 		FanOut:             0,
@@ -139,7 +161,7 @@ func (ds *DistributedStore) SearchHybrid(ctx context.Context, query string, opts
 		Timeout:            5000,
 	}
 
-	return ScatterGatherSearchHybrid(ctx, ds.shardManager, queryEmbedding, opts, scgConfig)
+	return ScatterGatherSearchHybrid(ctx, ds.shardManager, query, queryEmbedding, opts, scgConfig)
 }
 
 // GetChunk returns a chunk by its ID.

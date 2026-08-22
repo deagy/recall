@@ -366,15 +366,17 @@ func (sm *ShardManager) Search(ctx context.Context, query []float32, opts index.
 	return allResults, nil
 }
 
-// SearchHybrid performs hybrid search combining vector similarity and BM25 keyword scores.
-func (sm *ShardManager) SearchHybrid(ctx context.Context, query []float32, opts index.SearchOptions) ([]index.SearchResult, error) {
+// SearchHybrid performs hybrid search combining vector similarity and BM25
+// keyword scores across all active shards. query is the raw query text and
+// queryEmb its embedding; both are required for true hybrid ranking.
+func (sm *ShardManager) SearchHybrid(ctx context.Context, query string, queryEmb []float32, opts index.SearchOptions) ([]index.SearchResult, error) {
 	activeShards := sm.GetActiveShards()
 
 	var allResults []index.SearchResult
 	var lastErr error
 
 	for _, shard := range activeShards {
-		results, err := shard.SearchHybrid(ctx, query, opts)
+		results, err := shard.SearchHybrid(ctx, query, queryEmb, opts)
 		if err != nil {
 			lastErr = err
 			continue
@@ -394,28 +396,23 @@ func (sm *ShardManager) SearchHybrid(ctx context.Context, query []float32, opts 
 	return allResults, nil
 }
 
-// Search searches within this shard using vector similarity.
+// Search searches within this shard using vector similarity. It searches a
+// snapshot taken under the shard's read lock (see NewShardIndex), so it is
+// safe to call concurrently with writes to the shard.
 func (s *Shard) Search(ctx context.Context, query []float32, opts index.SearchOptions) ([]index.SearchResult, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	if len(s.Data) == 0 {
-		return []index.SearchResult{}, nil
-	}
-
-	// Create a simple in-memory index for this shard
-	idx := NewShardIndex(s)
-	results, err := idx.Search(ctx, query, opts)
-	if err != nil {
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-
-	return results, nil
+	return NewShardIndex(s).Search(ctx, query, opts)
 }
 
-// SearchHybrid performs hybrid search combining vector similarity and BM25 keyword scores.
-// Note: This is a wrapper that calls Search with a dummy embedding for hybrid functionality.
-// In a production system, you would generate the query embedding from the query string.
-func (s *Shard) SearchHybrid(ctx context.Context, query []float32, opts index.SearchOptions) ([]index.SearchResult, error) {
-	return s.Search(ctx, query, opts)
+// SearchHybrid performs hybrid search within this shard, combining vector
+// similarity (queryEmb against stored chunk embeddings) with BM25 keyword
+// scores (query against chunk content). See ShardIndex.SearchHybrid for the
+// score combination semantics.
+func (s *Shard) SearchHybrid(ctx context.Context, query string, queryEmb []float32, opts index.SearchOptions) ([]index.SearchResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return NewShardIndex(s).SearchHybrid(ctx, query, queryEmb, opts)
 }

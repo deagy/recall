@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/deagy/recall/core"
@@ -176,7 +177,10 @@ func (rm *ReplicationManager) replicatePrimaryReplica(ctx context.Context, shard
 func (rm *ReplicationManager) replicateQuorum(ctx context.Context, shardID string, data map[string]*core.Chunk) []ReplicationResult {
 	var results []ReplicationResult
 
-	// Get all nodes
+	// Get all nodes. GetOnlineNodes iterates a map, so its order is
+	// nondeterministic — sort by node ID so the same data always replicates
+	// to the same quorum set, keeping repeated ReplicateData calls
+	// idempotent.
 	allNodes := rm.cluster.GetOnlineNodes()
 	if len(allNodes) == 0 {
 		results = append(results, ReplicationResult{
@@ -185,6 +189,9 @@ func (rm *ReplicationManager) replicateQuorum(ctx context.Context, shardID strin
 		})
 		return results
 	}
+	sort.Slice(allNodes, func(i, j int) bool {
+		return allNodes[i].ID < allNodes[j].ID
+	})
 
 	// Determine quorum size (majority)
 	quorumSize := len(allNodes)/2 + 1

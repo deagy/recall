@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/deagy/recall/chunker"
 	"github.com/deagy/recall/core"
@@ -151,7 +153,7 @@ func TestShardManager_SearchAndHybrid(t *testing.T) {
 		t.Errorf("expected the aligned chunk first, got %s", res[0].Chunk.ID)
 	}
 
-	hybrid, err := sm.SearchHybrid(context.Background(), []float32{1, 0, 0}, index.SearchOptions{TopK: 5})
+	hybrid, err := sm.SearchHybrid(context.Background(), "first second chunk", []float32{1, 0, 0}, index.SearchOptions{TopK: 5})
 	if err != nil || len(hybrid) != 2 {
 		t.Fatalf("hybrid search expected 2 results, got %d err=%v", len(hybrid), err)
 	}
@@ -206,20 +208,44 @@ func TestShardIndex_SearchHybrid(t *testing.T) {
 	shard.Data["c2"] = &core.Chunk{ID: "c2", Content: "unrelated mundane text", Embedding: []float32{0.9, 0.1, 0}}
 	si := NewShardIndex(shard)
 
-	// The query shares rare tokens with c1, so BM25 should lift it above
-	// c2 despite c2 having the better vector alignment.
-	res, err := si.SearchHybrid(context.Background(), "quantum fluoroscope zephyr", index.SearchOptions{TopK: 5})
-	if err != nil || len(res) != 2 {
-		t.Fatalf("expected 2 results, got %v err=%v", res, err)
+	// Keyword-only hit: the query embedding is orthogonal to c1's stored
+	// embedding (vector score 0), but c1 shares the query's rare tokens, so
+	// it must still surface on its BM25 score alone. c2 matches neither
+	// signal and must be dropped (non-positive fused score).
+	res, err := si.SearchHybrid(context.Background(), "quantum fluoroscope zephyr", []float32{0, 0, 1}, index.SearchOptions{TopK: 5})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if res[0].Chunk.ID != "c1" {
-		t.Errorf("keyword match expected first, got %s", res[0].Chunk.ID)
+	if len(res) != 1 || res[0].Chunk.ID != "c1" {
+		t.Fatalf("expected the keyword-only hit c1, got %+v", res)
 	}
 
-	// Nil-shard guard.
-	res, err = (&ShardIndex{}).SearchHybrid(context.Background(), "anything", index.SearchOptions{})
+	// Vector ranking: with no keyword overlap, the better-aligned embedding
+	// (c2) must rank first.
+	res, err = si.SearchHybrid(context.Background(), "no overlap terms here", []float32{1, 0, 0}, index.SearchOptions{TopK: 5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res) != 2 || res[0].Chunk.ID != "c2" {
+		t.Fatalf("expected vector alignment to rank c2 first, got %+v", res)
+	}
+	if res[0].Score < res[1].Score {
+		t.Error("results must be sorted by score descending")
+	}
+
+	// BM25Weight=1.0 is pure keyword: only the keyword hit survives.
+	res, err = si.SearchHybrid(context.Background(), "quantum fluoroscope", []float32{1, 0, 0}, index.SearchOptions{TopK: 5, BM25Weight: 1.0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res) != 1 || res[0].Chunk.ID != "c1" {
+		t.Fatalf("pure BM25 should return only the keyword hit, got %+v", res)
+	}
+
+	// Empty snapshot guard (zero-value index).
+	res, err = (&ShardIndex{}).SearchHybrid(context.Background(), "anything", []float32{}, index.SearchOptions{})
 	if err != nil || len(res) != 0 {
-		t.Errorf("nil-shard index must return no results, got %v err=%v", res, err)
+		t.Errorf("empty index must return no results, got %v err=%v", res, err)
 	}
 }
 
@@ -469,7 +495,7 @@ func TestScatterGatherSearchHybrid(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	res, err := ScatterGatherSearchHybrid(context.Background(), sm, []float32{1, 0, 0},
+	res, err := ScatterGatherSearchHybrid(context.Background(), sm, "alpha beta", []float32{1, 0, 0},
 		index.SearchOptions{TopK: 5}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -484,7 +510,7 @@ func TestScatterGatherSearchHybrid(t *testing.T) {
 	// FanOut=1 queries at most one shard.
 	cfg := DefaultScatterGatherConfig()
 	cfg.FanOut = 1
-	res, err = ScatterGatherSearchHybrid(context.Background(), sm, []float32{1, 0, 0},
+	res, err = ScatterGatherSearchHybrid(context.Background(), sm, "alpha beta", []float32{1, 0, 0},
 		index.SearchOptions{TopK: 5}, cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -495,10 +521,76 @@ func TestScatterGatherSearchHybrid(t *testing.T) {
 
 	// No active shards → error.
 	emptySM := NewShardManager(NewCluster(DefaultClusterConfig()))
-	if _, err := ScatterGatherSearchHybrid(context.Background(), emptySM, []float32{1, 0, 0},
+	if _, err := ScatterGatherSearchHybrid(context.Background(), emptySM, "alpha beta", []float32{1, 0, 0},
 		index.SearchOptions{}, nil); err == nil {
 		t.Error("expected error with no active shards")
 	}
+}
+
+// TestShardIndex_ConcurrentSnapshotSearch exercises concurrent shard writes
+// (through ShardManager) against snapshot-based searches. It exists to be
+// run under -race: searches must never observe the shard map without the
+// shard lock.
+func TestShardIndex_ConcurrentSnapshotSearch(t *testing.T) {
+	_, sm := newTestShardCluster(1)
+	ctx := context.Background()
+
+	// All chunk IDs share an 8-char prefix so they land in one shard.
+	for i := 0; i < 20; i++ {
+		if err := sm.StoreChunk(ctx, chunkWithEmbed(fmt.Sprintf("x0000000%d", i), fmt.Sprintf("seed content %d", i), 1, 0, 0)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	shard, ok := sm.GetShard("shard-x0000000")
+	if !ok {
+		t.Fatal("seeded shard not found")
+	}
+
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; ; i++ {
+			if i%16 == 0 {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+			}
+			if err := sm.StoreChunk(ctx, chunkWithEmbed(fmt.Sprintf("x0000000%d", 1000+i%500), fmt.Sprintf("writer text %d", i), 1, 0, 0)); err != nil {
+				t.Error(err)
+				return
+			}
+		}
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			idx := NewShardIndex(shard)
+			if _, err := idx.Search(ctx, []float32{1, 0, 0}, index.SearchOptions{TopK: 5}); err != nil {
+				t.Error(err)
+				return
+			}
+			if _, err := idx.SearchHybrid(ctx, "seed content writer text", []float32{1, 0, 0}, index.SearchOptions{TopK: 5}); err != nil {
+				t.Error(err)
+				return
+			}
+		}
+	}()
+
+	time.Sleep(250 * time.Millisecond)
+	close(stop)
+	wg.Wait()
 }
 
 // --- Phase 3.2: shard ID collisions ---

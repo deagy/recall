@@ -12,43 +12,65 @@ import (
 	"github.com/deagy/recall/index"
 )
 
-// ShardIndex provides vector similarity search within a single shard.
+// ShardIndex provides vector similarity and hybrid (vector + BM25) search
+// over a snapshot of a shard's chunk map.
+//
+// The snapshot is an independent copy taken under the shard's read lock at
+// construction time (see NewShardIndex), so ShardIndex methods are safe to
+// call concurrently with writes to the live shard and never require holding
+// the shard's lock. Results reflect the shard's state at snapshot time, not
+// its current state.
 type ShardIndex struct {
-	shard *Shard
+	data map[string]*core.Chunk
+	ns   string
 }
 
-// NewShardIndex creates a new ShardIndex from a shard.
+// NewShardIndex creates a new ShardIndex from a snapshot of the shard's
+// current chunk map. A nil shard yields an empty index.
 func NewShardIndex(shard *Shard) *ShardIndex {
-	return &ShardIndex{shard: shard}
+	if shard == nil {
+		return &ShardIndex{}
+	}
+	shard.mu.RLock()
+	snapshot := make(map[string]*core.Chunk, len(shard.Data))
+	for id, chunk := range shard.Data {
+		snapshot[id] = chunk
+	}
+	ns := shard.ID
+	shard.mu.RUnlock()
+	return &ShardIndex{data: snapshot, ns: ns}
 }
 
-// Search performs vector similarity search within the shard.
+// matchesFilters reports whether chunk satisfies every metadata filter.
+func matchesFilters(chunk *core.Chunk, filters []index.Filter) bool {
+	for _, filter := range filters {
+		if !filter.Match(chunk) {
+			return false
+		}
+	}
+	return true
+}
+
+// Search performs vector similarity search over the shard snapshot.
 func (si *ShardIndex) Search(ctx context.Context, query []float32, opts index.SearchOptions) ([]index.SearchResult, error) {
-	if si.shard == nil || len(si.shard.Data) == 0 {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if len(si.data) == 0 {
 		return []index.SearchResult{}, nil
 	}
 
 	var results []index.SearchResult
 
-	for _, chunk := range si.shard.Data {
+	for _, chunk := range si.data {
 		if chunk.Embedding == nil {
 			continue
 		}
 
 		score := cosineSimilarity(query, chunk.Embedding)
 
-		// Apply filters
-		if len(opts.Filters) > 0 {
-			matchesAll := true
-			for _, filter := range opts.Filters {
-				if !filter.Match(chunk) {
-					matchesAll = false
-					break
-				}
-			}
-			if !matchesAll {
-				continue
-			}
+		if !matchesFilters(chunk, opts.Filters) {
+			continue
 		}
 
 		if score < opts.MinScore {
@@ -61,8 +83,8 @@ func (si *ShardIndex) Search(ctx context.Context, query []float32, opts index.Se
 		})
 	}
 
-	// Sort by score (descending)
-	sortResultsByScore(results)
+	// Sort by score (descending) with a deterministic tie-break.
+	sortSearchResults(results)
 
 	// Limit results
 	if len(results) > opts.TopK {
@@ -72,78 +94,75 @@ func (si *ShardIndex) Search(ctx context.Context, query []float32, opts index.Se
 	return results, nil
 }
 
-// SearchHybrid performs hybrid search combining vector similarity and BM25 keyword scores.
-func (si *ShardIndex) SearchHybrid(ctx context.Context, query string, opts index.SearchOptions) ([]index.SearchResult, error) {
-	if si.shard == nil || len(si.shard.Data) == 0 {
+// SearchHybrid performs hybrid search over the shard snapshot, combining
+// vector similarity (queryEmb against each chunk's stored embedding) with
+// BM25 keyword scores (query against each chunk's content).
+//
+// The combination mirrors index.HybridIndex: a custom opts.Fusion when set,
+// otherwise a weighted sum over opts.BM25Weight (0.5/0.5 when unset).
+// Results with a non-positive fused score are dropped, MinScore applies to
+// the fused score, and at most TopK results are returned. Because the vector
+// and keyword scores are independent, chunks with no vector match can still
+// surface on a strong keyword hit (and vice versa).
+//
+// The BM25 index is built per call over the snapshot — O(n) per query, which
+// is acceptable for in-process shards; very large shards at high query rates
+// should use an incrementally maintained keyword index (see ROADMAP).
+func (si *ShardIndex) SearchHybrid(ctx context.Context, query string, queryEmb []float32, opts index.SearchOptions) ([]index.SearchResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if len(si.data) == 0 {
 		return []index.SearchResult{}, nil
 	}
 
-	// Generate query embedding (simplified - would use actual embedder in production)
-	queryEmbedding := generateQueryEmbedding(query)
-
-	// Create BM25 indexer for the shard
 	bm25Indexer := bm25.New(bm25.DefaultConfig())
-	for _, chunk := range si.shard.Data {
+	for _, chunk := range si.data {
 		bm25Indexer.AddDocument(chunk.ID, chunk.Content)
 	}
+	kwScores := make(map[string]float64, len(si.data))
+	for _, r := range bm25Indexer.Search(query) {
+		kwScores[r.DocID] = r.Score
+	}
 
-	// Query BM25
-	bm25Results := bm25Indexer.Search(query)
-	bm25Scores := make(map[string]float64)
-	for _, r := range bm25Results {
-		bm25Scores[r.DocID] = r.Score
+	vecScores := make(map[string]float64, len(si.data))
+	for id, chunk := range si.data {
+		if chunk.Embedding != nil {
+			vecScores[id] = cosineSimilarity(queryEmb, chunk.Embedding)
+		}
+	}
+
+	var fused map[string]float64
+	if opts.Fusion != nil {
+		fused = opts.Fusion.Fuse(vecScores, kwScores)
 	}
 
 	var results []index.SearchResult
-
-	for _, chunk := range si.shard.Data {
-		if chunk.Embedding == nil {
+	for id, chunk := range si.data {
+		var score float64
+		if fused != nil {
+			score = fused[id]
+		} else {
+			weight := opts.BM25Weight
+			if weight == 0 {
+				weight = 0.5
+			}
+			score = (1-weight)*vecScores[id] + weight*kwScores[id]
+		}
+		if score <= 0 || score < opts.MinScore {
 			continue
 		}
-
-		// Vector similarity score
-		vectorScore := cosineSimilarity(queryEmbedding, chunk.Embedding)
-
-		// BM25 score
-		bm25Score := 0.0
-		if score, exists := bm25Scores[chunk.ID]; exists {
-			bm25Score = score
-		}
-
-		// Combine scores (default 50/50)
-		bm25Weight := opts.BM25Weight
-		if bm25Weight == 0 {
-			bm25Weight = 0.5
-		}
-
-		combinedScore := (1-bm25Weight)*vectorScore + bm25Weight*bm25Score
-
-		// Apply filters
-		if len(opts.Filters) > 0 {
-			matchesAll := true
-			for _, filter := range opts.Filters {
-				if !filter.Match(chunk) {
-					matchesAll = false
-					break
-				}
-			}
-			if !matchesAll {
-				continue
-			}
-		}
-
-		if combinedScore < opts.MinScore {
+		if !matchesFilters(chunk, opts.Filters) {
 			continue
 		}
-
 		results = append(results, index.SearchResult{
 			Chunk: chunk,
-			Score: combinedScore,
+			Score: score,
 		})
 	}
 
-	// Sort by score (descending)
-	sortResultsByScore(results)
+	// Sort by score (descending) with a deterministic tie-break.
+	sortSearchResults(results)
 
 	// Limit results
 	if len(results) > opts.TopK {
@@ -153,8 +172,10 @@ func (si *ShardIndex) SearchHybrid(ctx context.Context, query string, opts index
 	return results, nil
 }
 
-// generateQueryEmbedding creates a simple query embedding based on word frequencies.
-// In production, this would use an actual embedding model.
+// generateQueryEmbedding creates a lexical query embedding based on hashed
+// word frequencies. It is a fallback used only when a DistributedStore has
+// no embedder configured; its vectors are not semantically meaningful and
+// generally do not align with embeddings produced by a real embedding model.
 func generateQueryEmbedding(query string) []float32 {
 	dimension := 128
 	embedding := make([]float32, dimension)
@@ -222,17 +243,6 @@ func cosineSimilarity(a, b []float32) float64 {
 	return dotProduct / (normA * normB)
 }
 
-// sortResultsByScore sorts results by score in descending order.
-func sortResultsByScore(results []index.SearchResult) {
-	for i := 0; i < len(results); i++ {
-		for j := i + 1; j < len(results); j++ {
-			if results[j].Score > results[i].Score {
-				results[i], results[j] = results[j], results[i]
-			}
-		}
-	}
-}
-
 // Compile-time check to ensure ShardIndex implements the Index interface.
 var _ index.Index = (*ShardIndex)(nil)
 
@@ -251,20 +261,14 @@ func (si *ShardIndex) Delete(ctx context.Context, id string) error {
 	return fmt.Errorf("ShardIndex is read-only")
 }
 
-// Count returns the number of chunks in the shard.
+// Count returns the number of chunks in the snapshot.
 func (si *ShardIndex) Count() int {
-	if si.shard == nil {
-		return 0
-	}
-	return len(si.shard.Data)
+	return len(si.data)
 }
 
 // Dimension returns the embedding dimension (0 if no chunks have embeddings).
 func (si *ShardIndex) Dimension() int {
-	if si.shard == nil {
-		return 0
-	}
-	for _, chunk := range si.shard.Data {
+	for _, chunk := range si.data {
 		if chunk.Embedding != nil {
 			return len(chunk.Embedding)
 		}
@@ -272,10 +276,7 @@ func (si *ShardIndex) Dimension() int {
 	return 0
 }
 
-// Namespace returns the shard ID as the namespace.
+// Namespace returns the shard ID the snapshot was taken from.
 func (si *ShardIndex) Namespace() string {
-	if si.shard == nil {
-		return ""
-	}
-	return si.shard.ID
+	return si.ns
 }

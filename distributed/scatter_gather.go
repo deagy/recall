@@ -129,9 +129,11 @@ func ScatterGatherSearch(ctx context.Context, sm *ShardManager, query []float32,
 }
 
 // ScatterGatherSearchHybrid performs a scatter-gather hybrid search across
-// multiple shards.
-func ScatterGatherSearchHybrid(ctx context.Context, sm *ShardManager, query []float32, opts index.SearchOptions, config *ScatterGatherConfig) ([]index.SearchResult, error) {
+// multiple shards. query is the raw query text and queryEmb its embedding;
+// both are fanned out so each shard can rank vector and keyword signals
+// independently.
+func ScatterGatherSearchHybrid(ctx context.Context, sm *ShardManager, query string, queryEmb []float32, opts index.SearchOptions, config *ScatterGatherConfig) ([]index.SearchResult, error) {
 	return scatterGather(ctx, sm, config, func(ctx context.Context, s *Shard) ([]index.SearchResult, error) {
-		return s.SearchHybrid(ctx, query, opts)
+		return s.SearchHybrid(ctx, query, queryEmb, opts)
 	})
 }
