@@ -100,6 +100,8 @@ go test ./store/... -race -count=1
 
 ## Phase 3 — Distributed package (P1/P2) 🟠🟡
 
+**Status: complete (2026-08-21)** — 3.1+3.2 `8eaa478` · 3.3 `49ffbf8` · 3.4 `92f7b81`. Validation: `go test ./... -count=1` and `CGO_ENABLED=1 go test ./distributed/ -race -count=1` green, including a new concurrent snapshot/write race test. The hybrid signature changes (in-development `distributed` package) are tracked as **Breaking** in CHANGELOG `[Unreleased]` and `docs/MIGRATION.md`.
+
 ### 3.1 Replica bookkeeping is broken (P1)
 - **File:** `distributed/replication.go:108-140` (`replicatePrimaryReplica`), `237-257` (`GetReplicationStatus`)
 - **Defect:** replica shards are created with `CreateShard(node.ID)` (auto ID `shard-<node>-<n>`), but the result reports and `GetReplicationStatus` looks up the never-created ID `<shard>-replica-<node>` → status can never find replicas. Repeated `ReplicateData` calls also create unbounded duplicate shards.

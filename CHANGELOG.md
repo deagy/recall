@@ -10,7 +10,48 @@ note in [docs/MIGRATION.md](./docs/MIGRATION.md).
 
 ## [Unreleased]
 
+### Breaking
+
+- **Breaking** (`distributed`, in-development package): hybrid search now
+  takes the raw query text and the query embedding separately instead of a
+  single `[]float32` that the hybrid path internally re-approximated
+  lexically. New signatures: `ShardManager.SearchHybrid(ctx, query string,
+  queryEmb []float32, opts)`, `Shard.SearchHybrid(ctx, query, queryEmb,
+  opts)`, `ScatterGatherSearchHybrid(ctx, sm, query, queryEmb, opts,
+  config)`, `ShardIndex.SearchHybrid(ctx, query, queryEmb, opts)`. Pass the
+  query and its embedding (e.g. from your embedder) as separate arguments.
+
 ### Fixed
+
+- `distributed`: replica shards are now created with the **deterministic
+  ID the API reports** (`<shard>-<kind>-<node>`), so
+  `ReplicationResult.ReplicaID` and `GetReplicationStatus` can actually
+  resolve and count the replicas (previously auto-IDed shards were created
+  and status could never find them). Replication is now idempotent:
+  repeated `ReplicateData` calls reuse existing replica shards and update
+  their data instead of creating unbounded duplicates.
+- `distributed`: auto-generated shard IDs come from a monotonic
+  `ShardManager` counter that never shrinks after `DeleteShard`, so an ID
+  can no longer be reused and silently overwrite a live shard's map entry.
+- `distributed`: `ScatterGatherConfig.Timeout` is now actually applied —
+  a positive timeout runs the fan-out under a derived context (an earlier
+  caller deadline is never extended); `0` remains "no timeout".
+  `MaxResultsPerShard` is enforced before merging, and the vector/hybrid
+  fan-outs share one code path.
+- `distributed`: `ShardIndex` now snapshots the shard's chunk map under the
+  shard's read lock in `NewShardIndex` instead of reading live state with
+  no locking (a concurrent write raced the old path under `-race`);
+  `ShardIndex.SearchHybrid` is now real hybrid search (BM25 + vector
+  cosine over the caller-provided query embedding, fused with `opts.Fusion`
+  or the `(1-BM25Weight, BM25Weight)` weighted sum, matching
+  `index.HybridIndex` semantics) instead of scoring BM25 against a fake
+  hashed 128-dim embedding; the O(n²) selection sort was replaced by
+  `sort.Slice` with a deterministic chunk-ID tie-break.
+- `distributed`: `replicateQuorum` sorts the node list before picking the
+  quorum set (map-iteration order made the set nondeterministic, so
+  repeated replicates of the same data kept creating new replica shards),
+  and `replicatePrimaryReplica` skips the primary by node ID rather than
+  assuming ring position 0.
 
 - `reasoning`: `Engine.InferRelations` now honors the configured
   `MinConfidence` (previously validated but never applied; inferences were
@@ -33,6 +74,16 @@ note in [docs/MIGRATION.md](./docs/MIGRATION.md).
 
 ### Behavior
 
+- `distributed`: `DistributedStore.Search`/`SearchHybrid` now embed the
+  query with the store's embedder when one is configured; the lexical
+  `generateQueryEmbedding` remains only as a documented fallback for
+  embedder-less stores (its vectors are not semantically meaningful).
+- `distributed`: `ShardIndex` results reflect the shard's state at
+  `NewShardIndex` time (snapshot semantics), not the shard's current state.
+- `distributed`: `CreateShardWithID` with an already-registered ID now
+  returns `ErrShardExists` instead of silently replacing the existing
+  shard; `ShardManager.StoreChunk` tolerates the concurrent-create race by
+  reusing the winner.
 - `reasoning`: inferences below `MinConfidence` (default 0.3) are now
   dropped from `InferRelations`/`Reason` results; `/graph/reason` output may
   exclude low-confidence inferences that were previously returned.

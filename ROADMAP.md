@@ -606,3 +606,20 @@ Priority 1 (Foundation)          Priority 2 (Production)        Priority 3 (Grow
 1. ~~**Test coverage hardening** (Phase 19)~~ — ✅ done 2026-08-18 (all 14 packages ≥80%)
 2. ~~**Project hygiene** (Phase 32)~~ — ✅ done 2026-08-19 (lint at 0 issues, CI/release workflows, governance + per-package docs, e2e/production examples)
 3. ~~**CLI tool** (Phase 29)~~ — ✅ done 2026-08-19 (`cmd/recall`: local + server modes, all data/store/cluster/eval commands)
+
+---
+
+## Backlog (Deferred Items)
+
+Items deliberately not implemented yet, with the reason they were deferred:
+
+- **Incremental BM25 keyword index for large shards** (`distributed`) —
+  `ShardIndex.SearchHybrid` builds its BM25 index per call (O(n) per
+  query), which is fine for in-process shards. Very large shards at high
+  query rates should maintain the keyword index incrementally as chunks are
+  added/removed. (Recorded during Phase 3 remediation, 2026-08-21.)
+- **Network transport for the distributed package** — `distributed`
+  currently simulates a cluster in-process (node `Address` fields are
+  metadata; fan-out is local function calls). A future phase can swap the
+  in-process fan-out for a real transport (e.g. gRPC) behind the same
+  interfaces.

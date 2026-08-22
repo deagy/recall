@@ -66,8 +66,38 @@ Back up first: `recall store backup`.
 
 ### Next release (unreleased)
 
+**Breaking changes**
+
+The `distributed` package is under active development and its API is not
+frozen; the changes below are tracked here and in the CHANGELOG for
+transparency.
+
+- `distributed`: hybrid search functions now take the raw query text and
+  the query embedding separately (previously a single `[]float32` that the
+  hybrid path internally re-approximated lexically):
+  - `ShardManager.SearchHybrid(ctx, query string, queryEmb []float32, opts)`
+  - `Shard.SearchHybrid(ctx, query string, queryEmb []float32, opts)`
+  - `ScatterGatherSearchHybrid(ctx, sm, query string, queryEmb []float32, opts, config)`
+  - `ShardIndex.SearchHybrid(ctx, query string, queryEmb []float32, opts)`
+
+  Migrate: pass the query string and its embedding (e.g. from your embedder)
+  as separate arguments.
+
 **Behavioral changes**
 
+- `distributed`: `CreateShardWithID` with an already-registered ID now
+  returns `distributed.ErrShardExists` instead of silently replacing the
+  existing shard.
+- `distributed`: `ScatterGatherConfig.Timeout` is now enforced (previously
+  ignored); a positive timeout bounds the fan-out wait, and
+  `MaxResultsPerShard` is applied before merging.
+- `distributed`: `ShardIndex` snapshots the shard's chunks at
+  `NewShardIndex` time; results reflect the snapshot, not the shard's
+  current state.
+- `distributed`: `DistributedStore.Search`/`SearchHybrid` embed the query
+  with the configured embedder when one exists; without an embedder they
+  fall back to a lexical approximation (vector scores are not semantically
+  meaningful in that mode).
 - `reasoning`: `Engine.InferRelations`/`Reason` now drop inferred relations
   with confidence below the configured `MinConfidence` (default 0.3);
   previously the threshold was validated but never applied, so
