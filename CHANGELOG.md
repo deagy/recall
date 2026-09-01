@@ -10,6 +10,17 @@ note in [docs/MIGRATION.md](./docs/MIGRATION.md).
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-09-01
+
+### Fixed
+
+- CI: `govern`'s `TestTheContractMatchesItsOrigin` never received the origin
+  file it compares against, so it hard-failed under CI for want of the file
+  rather than for divergence — and v0.3.0 was tagged with that job red. The
+  workflow now checks out the origin repository and points the guard at its
+  contract. No library code changed; `v0.3.1` is `v0.3.0` with a CI that
+  actually runs the guard.
+
 ## [0.3.0] — 2026-08-31
 
 ### Added
@@ -310,7 +321,8 @@ The initial release contains everything developed through Phase 32 of the
   golangci-lint + govulncheck + license compliance in CI, release automation
   (Phase 32)
 
-[Unreleased]: https://github.com/deagy/recall/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/deagy/recall/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/deagy/recall/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/deagy/recall/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/deagy/recall/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/deagy/recall/releases/tag/v0.1.0
