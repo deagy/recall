@@ -10,6 +10,18 @@ note in [docs/MIGRATION.md](./docs/MIGRATION.md).
 
 ## [Unreleased]
 
+### Fixed
+
+- `govern`: a whitespace-only query is now refused. `Validate` compared the
+  query to the empty string exactly, so `"   "` passed, reached the store,
+  scored 0 against everything and wrote an audit row — a retrieval that
+  happened, was recorded, and asked nothing. The refusal exists so that no
+  unqualified query is served, and `"  "` is as unqualified as `""`.
+
+  Inherited from the engine this package was ported from, which used the same
+  exact comparison, and invisible to the ported contract fixture because the
+  fixture is what was ported. Found by an independent audit of the migration.
+
 ## [0.3.1] — 2026-09-01
 
 ### Fixed

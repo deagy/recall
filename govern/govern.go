@@ -170,7 +170,16 @@ func New(search Searcher, recorder Recorder, embedder, model string) (*Store, er
 // refusals can be tested without a store — which is also how they are proven
 // to happen before anything is touched.
 func (s *Store) Validate(req Request) error {
-	if req.Query == "" {
+	// Trimmed, not just compared to empty. A whitespace-only query passed this
+	// check, reached the store, scored 0 against everything and wrote an audit
+	// row -- a retrieval that happened, was recorded, and asked nothing. The
+	// refusal exists so that no unqualified query is served; "  " is as
+	// unqualified as "".
+	//
+	// Inherited faithfully from the engine this was ported from, which used
+	// the same exact comparison. Ported behaviour is not automatically correct
+	// behaviour, and the contract case only ever exercised the empty string.
+	if strings.TrimSpace(req.Query) == "" {
 		return ErrNoQuery
 	}
 	if req.Classification == "" {

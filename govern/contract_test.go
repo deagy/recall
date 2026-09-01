@@ -190,3 +190,34 @@ func TestTheContractMatchesItsOrigin(t *testing.T) {
 			"re-vendor rather than editing it.", contractPath, source)
 	}
 }
+
+// TestAWhitespaceQueryIsRefused.
+//
+// The contract's "no query" case exercises the empty string, and this check
+// compared against it exactly -- so "   " passed validation, reached the
+// store, scored 0 against everything and wrote an audit row. A retrieval that
+// happened, was recorded, and asked nothing.
+//
+// Ported faithfully from the engine this replaced, which had the same exact
+// comparison. That is why it is worth a test of its own: the fixture cannot
+// see it, because the fixture is what was ported.
+func TestAWhitespaceQueryIsRefused(t *testing.T) {
+	store, err := govern.New(refusingSearcher{t: t}, &countingRecorder{}, "e", "m")
+	if err != nil {
+		t.Fatalf("govern.New: %v", err)
+	}
+
+	for _, query := range []string{" ", "   ", "\t", "\n", " \t\n "} {
+		req := govern.Request{
+			Query:          query,
+			Classification: "internal",
+			AllSources:     true,
+		}
+		if err := store.Validate(req); !errors.Is(err, govern.ErrNoQuery) {
+			t.Errorf("Validate(%q) = %v, want ErrNoQuery", query, err)
+		}
+		if _, err := store.Search(context.Background(), req); !errors.Is(err, govern.ErrNoQuery) {
+			t.Errorf("Search(%q) = %v, want ErrNoQuery", query, err)
+		}
+	}
+}
