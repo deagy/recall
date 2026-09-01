@@ -10,6 +10,18 @@ note in [docs/MIGRATION.md](./docs/MIGRATION.md).
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-08-31
+
+### Added
+
+- `govern`: a fail-closed retrieval view over a recall store. It refuses a
+  request that has not decided its scope, has not declared a classification, or
+  cannot be recorded, and it refuses **before** touching the store — an
+  interface that only refuses after opening a connection has already revealed
+  that the caller asked. It decides no policy: classification and source names
+  are opaque required strings, and the vocabulary belongs to the embedding
+  system.
+
 ### Breaking
 
 - **Breaking** (`distributed`, in-development package): hybrid search now
@@ -298,5 +310,7 @@ The initial release contains everything developed through Phase 32 of the
   golangci-lint + govulncheck + license compliance in CI, release automation
   (Phase 32)
 
-[Unreleased]: https://github.com/deagy/recall/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/deagy/recall/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/deagy/recall/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/deagy/recall/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/deagy/recall/releases/tag/v0.1.0
