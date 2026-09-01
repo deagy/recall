@@ -35,6 +35,34 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # govern's fail-closed contract is vendored from cadre, which is its
+      # origin. TestTheContractMatchesItsOrigin hard-fails under CI rather
+      # than skipping, on purpose: a guard that silently skips is not a guard.
+      # It needs the origin file to compare against, and without this checkout
+      # it failed for want of the file rather than for divergence -- which is
+      # how v0.3.0 was tagged with this job red.
+      #
+      # Read-only, shallow, and non-fatal if cadre ever moves: the step below
+      # sets CADRE_FAIL_CLOSED_CONTRACT only when the file is actually there,
+      # so a rename in the other repository surfaces as this guard failing
+      # with its own message rather than as a checkout error.
+      - name: Check out cadre (origin of the fail-closed contract)
+        uses: actions/checkout@v4
+        with:
+          repository: deagy/cadre
+          path: .cadre-origin
+          fetch-depth: 1
+
+      - name: Point the contract guard at its origin
+        run: |
+          origin="$GITHUB_WORKSPACE/.cadre-origin/internal/knowledge/testdata/fail-closed-contract.json"
+          if [ ! -f "$origin" ]; then
+            echo "::error::cadre's fail-closed contract is not at $origin;"
+            echo "::error::the guard cannot run, and it must not be skipped under CI."
+            exit 1
+          fi
+          echo "CADRE_FAIL_CLOSED_CONTRACT=$origin" >> "$GITHUB_ENV"
+
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
