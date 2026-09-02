@@ -57,6 +57,31 @@ jobs:
           esac
           git rev-parse --verify "refs/tags/$TAG" >/dev/null
 
+      # The same two steps go.yml carries, for the same reason, and their
+      # absence here is why this job could not have published even once the
+      # trigger was fixed: govern's fail-closed contract is vendored from
+      # cadre and TestTheContractMatchesItsOrigin hard-fails under CI rather
+      # than skipping. go.yml's own comment records that this is how v0.3.0
+      # came to be tagged with its job red -- and then the fix landed in one
+      # workflow and not the other, so the guard failed here for want of the
+      # file rather than for divergence.
+      - name: Check out cadre (origin of the fail-closed contract)
+        uses: actions/checkout@v4
+        with:
+          repository: deagy/cadre
+          path: .cadre-origin
+          fetch-depth: 1
+
+      - name: Point the contract guard at its origin
+        run: |
+          origin="$GITHUB_WORKSPACE/.cadre-origin/internal/knowledge/testdata/fail-closed-contract.json"
+          if [ ! -f "$origin" ]; then
+            echo "::error::cadre's fail-closed contract is not at $origin;"
+            echo "::error::the guard cannot run, and it must not be skipped under CI."
+            exit 1
+          fi
+          echo "CADRE_FAIL_CLOSED_CONTRACT=$origin" >> "$GITHUB_ENV"
+
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
