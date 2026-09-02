@@ -1,7 +1,7 @@
 # Recall — Improvement Plan
 
 > **Created:** 2026-08-15
-> **Goal:** Achieve production readiness with >80% test coverage, bug-free core, clean formatting, and robust performance.
+> **Goal:** >80% test coverage in every library package, no known correctness bugs in the core, `gofmt` clean, and benchmarks that do not regress.
 > **Status:** Phase 1 — Formatting & Quick Wins
 
 ---
@@ -272,7 +272,7 @@ func (m *MemoryIndex) Delete(_ context.Context, id string) error {
 
 ## Phase 3: Performance & Robustness
 
-**Goal:** Make the library robust for production workloads.
+**Goal:** Make the library survive the failure modes a production workload actually hits — concurrent access, cancellation mid-query, and a corpus larger than memory.
 **Estimated effort:** 6–10 hours
 
 ### Task 3.1: Add Context Cancellation Support

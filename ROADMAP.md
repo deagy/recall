@@ -10,15 +10,15 @@ This document outlines the future development roadmap for the Recall library, or
 |--------|--------|
 | Completed Phases | 25 (Phases 1–22, 26, 29, 32) |
 | Packages | 30 library packages + 2 commands + 1 example |
-| All Tests Pass | ✅ Yes |
-| Overall Coverage Target | ✅ >80% in all 30 library packages (re-measured 2026-08-19; `cmd/*` + `example/*` mains exempt) |
-| Zero CGO | ✅ Maintained |
-| Lint | ✅ `golangci-lint` 0 issues (Phase 32, 2026-08-19) |
+| All Tests Pass | Yes |
+| Overall Coverage Target | >80% in all 30 library packages (re-measured 2026-08-19; `cmd/*` + `example/*` mains exempt) |
+| Zero CGO | Maintained |
+| Lint | `golangci-lint` 0 issues (Phase 32, 2026-08-19) |
 | LLM Backends | OpenAI, Ollama (Mock) |
 | Embedding Providers | OpenAI, Cohere, Ollama, ONNX (local), Mock |
 | Fusion Methods | WeightedFusion, RRF |
 
-### Coverage by Package (re-measured 2026-08-18 — ✅ all above target)
+### Coverage by Package (re-measured 2026-08-18 — all above target)
 
 | Package | Coverage | Package | Coverage |
 |---------|----------|---------|----------|
@@ -37,7 +37,7 @@ This document outlines the future development roadmap for the Recall library, or
 
 ## Phase 19: Test Coverage Hardening
 
-**Status: ✅ Complete (2026-08-18)** — all 14 packages are above the 80% target
+**Status: Complete (2026-08-18)** — all 14 packages are above the 80% target
 (see Current State Assessment). The checklists below are the work that got them
 there.
 
@@ -271,7 +271,7 @@ there.
 
 ## Phase 25: Resilience & Reliability
 
-**Status: ✅ Complete (2026-08-18)** — all four sub-phases implemented and tested (see checklist below).
+**Status: Complete (2026-08-18)** — all four sub-phases implemented and tested (see checklist below).
 
 **Goal:** Add production reliability features.
 
@@ -307,7 +307,7 @@ there.
 
 ## Phase 26: Advanced Retrieval
 
-**Status: ✅ Complete (2026-08-18)** — all four sub-phases implemented and tested (see checklist below).
+**Status: Complete (2026-08-18)** — all four sub-phases implemented and tested (see checklist below).
 
 **Goal:** State-of-the-art retrieval techniques.
 
@@ -447,7 +447,7 @@ there.
 
 ---
 
-## Phase 29: CLI Tool ✅
+## Phase 29: CLI Tool
 
 **Goal:** Provide a command-line interface for common operations.
 
@@ -540,7 +540,7 @@ there.
 
 ## Phase 32: Project Hygiene & Documentation
 
-**Status: ✅ Complete (2026-08-19)**
+**Status: Complete (2026-08-19)**
 
 **Goal:** Improve project infrastructure and documentation.
 
@@ -573,7 +573,7 @@ there.
 - [x] License compliance checking (CI)
 
 ### 32.4 Examples Enhancement
-- [x] More comprehensive examples in `example/`
+- [x] More examples in `example/`
 - [x] End-to-end tutorial (`example/e2e`: ingest → search → RAG → evaluate → reasoning)
 - [x] Production deployment example (`example/production`: `app.BuildAPIServer` + typed `client`)
 - [x] Benchmark comparison guide (`docs/BENCHMARKS.md` + `scripts/benchcompare.sh`)
@@ -603,9 +603,9 @@ Priority 1 (Foundation)          Priority 2 (Production)        Priority 3 (Grow
 ### Total Estimated Effort: ~36–38 weeks for full roadmap
 
 ### Quick Wins (can be done in parallel, ~2 weeks each):
-1. ~~**Test coverage hardening** (Phase 19)~~ — ✅ done 2026-08-18 (all 14 packages ≥80%)
-2. ~~**Project hygiene** (Phase 32)~~ — ✅ done 2026-08-19 (lint at 0 issues, CI/release workflows, governance + per-package docs, e2e/production examples)
-3. ~~**CLI tool** (Phase 29)~~ — ✅ done 2026-08-19 (`cmd/recall`: local + server modes, all data/store/cluster/eval commands)
+1. ~~**Test coverage hardening** (Phase 19)~~ — done 2026-08-18 (all 14 packages ≥80%)
+2. ~~**Project hygiene** (Phase 32)~~ — done 2026-08-19 (lint at 0 issues, CI/release workflows, governance + per-package docs, e2e/production examples)
+3. ~~**CLI tool** (Phase 29)~~ — done 2026-08-19 (`cmd/recall`: local + server modes, all data/store/cluster/eval commands)
 
 ---
 

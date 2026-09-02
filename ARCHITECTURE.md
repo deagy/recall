@@ -5,7 +5,7 @@ it together, how data flows through it, and the design decisions behind the
 major choices. For usage see [README.md](./README.md); for the contribution
 workflow see [CONTRIBUTING.md](./CONTRIBUTING.md).
 
-## Overview
+## How recall is put together
 
 Recall is primarily a **Go library** for building Retrieval-Augmented
 Generation (RAG) applications, plus an optional **service layer** (REST API,

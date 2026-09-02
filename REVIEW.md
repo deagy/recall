@@ -2,18 +2,18 @@
 
 _Reviewed: 2026-07-18 · Scope: full codebase (~25.7k LOC, 18 packages)_
 
-## Overview & Health
+## Where the project stands
 
 | Check | Result |
 |---|---|
-| `go build ./...` | ✅ passes |
-| `go vet ./...` | ✅ clean |
-| `go test ./... -count=1` | ✅ all pass (706 test funcs, ~13.7k test LOC) |
-| `gofmt -l .` | ✅ clean (sweep committed 2026-08-17, 12 files) |
-| Coverage ≥80% target | ✅ all 14 packages above (re-measured 2026-08-17) |
-| CI (`.github/workflows/go.yml`) | ✅ fixed 2026-08-17 — vet, gofmt gate, `-race` tests, smoke bench |
+| `go build ./...` | passes |
+| `go vet ./...` | clean |
+| `go test ./... -count=1` | all pass (706 test funcs, ~13.7k test LOC) |
+| `gofmt -l .` | clean (sweep committed 2026-08-17, 12 files) |
+| Coverage ≥80% target | all 14 packages above (re-measured 2026-08-17) |
+| CI (`.github/workflows/go.yml`) | fixed 2026-08-17 — vet, gofmt gate, `-race` tests, smoke bench |
 
-**Coverage vs. the >80% target** — ✅ *All 14 packages above target (re-measured 2026-08-17):*
+**Coverage vs. the >80% target** — *All 14 packages above target (re-measured 2026-08-17):*
 
 | Package | Coverage | Package | Coverage |
 |---|---|---|---|
@@ -27,7 +27,7 @@ _Reviewed: 2026-07-18 · Scope: full codebase (~25.7k LOC, 18 packages)_
 
 ---
 
-## 🔴 Critical bugs (correctness)
+## Critical bugs (correctness)
 
 ### ~~1. HNSW silently drops chunks added after activation~~ — *Fixed 2026-08-17 (see action plan #1):*
 `index/hnsw.go:53-70` (`MemoryIndex.Add`/`AddBatch`), `store/sqlite.go:171-173` (`SQLiteStore.Upload`)
@@ -106,7 +106,7 @@ contribution a constant. A dead, identically-buggy `fuseScores` helper was remov
 
 ---
 
-## 🟠 Medium issues
+## Medium issues
 
 - **~~`HNSWThreshold` hardcoded to 1,000~~** — *Fixed 2026-08-17:* per-index
   `MemoryIndex.SetHNSWThreshold(n)` (0 restores the default; the exported
@@ -140,7 +140,7 @@ contribution a constant. A dead, identically-buggy `fuseScores` helper was remov
   *Fixed 2026-08-17:* switched to `math/rand/v2` with `rand.NewPCG(42, 0)` (no deprecated
   constructors; fixed seed kept for deterministic layer assignment — seed chosen so the
   `TestHNSW_Recall*` guardrails pass).
-- ✅ **`HNSW.Search`** implemented its own min-heap with O(n) scan + full `sort.Slice` per
+- **`HNSW.Search`** implemented its own min-heap with O(n) scan + full `sort.Slice` per
   iteration — replaced with `container/heap` via the fix-3 `searchLayer` rewrite.
 - **`GetChunk` returns internal `*core.Chunk` pointers** (both stores) — callers can mutate
   index state. Consider returning copies.
@@ -149,7 +149,7 @@ contribution a constant. A dead, identically-buggy `fuseScores` helper was remov
 
 ---
 
-## 🟡 Minor / process
+## Minor / process
 
 - **CI**: ~~fix `go test -bench=.` → `go test ./... -bench=. -run=^$` (or drop the step); add
   `go vet ./...`, a `gofmt -l` check, and `go test -race ./...` steps; consider `-count=1`.~~
@@ -169,7 +169,7 @@ contribution a constant. A dead, identically-buggy `fuseScores` helper was remov
 
 ---
 
-## ✅ What's genuinely good
+## What's genuinely good
 
 - **Clean architecture** — interface-driven layering (`Embedder`, `Chunker`, `Fusion`,
   `InferenceRule`, `GraphStore`) with dependency injection; usable with no network deps.
@@ -184,13 +184,13 @@ contribution a constant. A dead, identically-buggy `fuseScores` helper was remov
 
 ## Prioritized action plan
 
-1. ✅ **HNSW incremental add + tombstone filtering** (bugs 1, 2) — *Done 2026-07-18:*
+1. **HNSW incremental add + tombstone filtering** (bugs 1, 2) — *Done 2026-07-18:*
    `MemoryIndex.Add`/`AddBatch` insert into the graph after activation via `syncHNSW`;
    `Delete` removes the chunk from `m.chunks`/BM25 so searches, `Count`, and `GetChunk`
    never see it (tombstone rebuild retained); new `HNSW.Contains`; `SQLiteStore` mirror kept
    in sync on upload and pruned on `DeleteChunk`/`DeleteDocument`. Regression tests:
    `index/memory_hnsw_test.go`, `store/sqlite_hnsw_test.go`, `TestHNSW_Contains`.
-2. ✅ **SQLiteStore locking** (bug 4) — *Done 2026-07-18:* `Upload` takes the write lock
+2. **SQLiteStore locking** (bug 4) — *Done 2026-07-18:* `Upload` takes the write lock
    around mirror/HNSW updates; `searchHNSW` and the `Search` HNSW gate hold the read lock;
    `buildHNSW` requires the caller to hold it. Concurrency test:
    `TestSQLiteStore_ConcurrentUploadAndSearch` (4 writers × 300 docs + live reader, crosses
@@ -198,7 +198,7 @@ contribution a constant. A dead, identically-buggy `fuseScores` helper was remov
    `:memory:` + pooled connections gave each connection a separate in-memory DB
    ("no such table: chunks" under concurrency); `NewSQLiteStore` now uses
    `db.SetMaxOpenConns(1)` — a second, previously unlisted defect caught by the new test.
-3. ✅ **Real HNSW construction** (bug 3) — *Done 2026-07-18:* rewrote `HNSW.Add` with a
+3. **Real HNSW construction** (bug 3) — *Done 2026-07-18:* rewrote `HNSW.Add` with a
    proper `searchLayer` ef-construction beam search (`container/heap`, also closes the
    "hand-rolled min-heap" medium item), greedy descent between layers, M/M0-capped
    bidirectional links with a reserved slot for the new back-link (pure top-M trimming
@@ -207,7 +207,7 @@ contribution a constant. A dead, identically-buggy `fuseScores` helper was remov
    `index/hnsw_recall_test.go` — `TestHNSW_Recall_Clustered` (recall@10 ≥ 0.8 vs brute
    force + layer-0 degree sanity) and `TestHNSW_Recall_IncrementalInserts`; both fail
    against the legacy single-neighbor graph.
-4. ✅ **Sorted hash ring + proper removal** (bug 5) — *Done 2026-07-18:* `hashRing`
+4. **Sorted hash ring + proper removal** (bug 5) — *Done 2026-07-18:* `hashRing`
    is now a sorted invariant maintained with `sort.Search` insert/delete
    (`O(ring)` shifts per vnode, fine at 150 vnodes × few nodes); `removeVirtualNodes`
    prunes the slice as well as the map; `GetReplicaNodes` walks the ring with
@@ -219,7 +219,7 @@ contribution a constant. A dead, identically-buggy `fuseScores` helper was remov
    wrap-around (primary == `GetNodeForChunk`), RF capping at 1 node and nil on an
    empty cluster, Rebalance idempotency + self-healing + cancellation, and key
    distribution sanity. All fail against the legacy unsorted append-only ring.
-5. ✅ **Hybrid fusion** (bug 7) — *Done 2026-08-17:* `fuseMap` now takes a lookup
+5. **Hybrid fusion** (bug 7) — *Done 2026-08-17:* `fuseMap` now takes a lookup
    callback and resolves BM25-only IDs from the index (deleted chunks stay excluded);
    custom fusion runs once over the full score maps instead of per-ID.
    `SQLiteStore` got a real FTS5 pipeline: `chunks_fts` (external content table,
@@ -235,25 +235,25 @@ contribution a constant. A dead, identically-buggy `fuseScores` helper was remov
    deleted chunk not resurrected via the keyword side). Stash-verified: both
    end-to-end tests fail against the pre-fix code (memory dropped the keyword-only
    chunk; SQLite "pure BM25" returned a distractor because no FTS table existed).
-6. **Housekeeping** — ~~`gofmt -s -w .`~~ ✅ *Done 2026-08-17* (12 files, alignment-only
-   diff, full test suite green); ~~de-duplicate BM25 + prune on delete~~ ✅ *Done
+6. **Housekeeping** — ~~`gofmt -s -w .`~~ *Done 2026-08-17* (12 files, alignment-only
+ diff, full test suite green); ~~de-duplicate BM25 + prune on delete~~ *Done
    2026-08-17 (bug 6 — index-internal BM25 is the single keyword source; store-level
    `s.bm25s` removed; `DeleteChunk`/`DeleteDocument` prune via `MemoryIndex.Delete`;
    regression tests in `index/memory_test.go` + `store/hybrid_fusion_test.go`)*;
-   ~~fix CI bench step~~ ✅ *Done 2026-08-17* (vet + gofmt gate + `-race` + smoke bench);
-   ~~move mocks to test files~~ ✅ *Done 2026-08-17* (six unused mockery files deleted;
+ ~~fix CI bench step~~ *Done 2026-08-17* (vet + gofmt gate + `-race` + smoke bench);
+ ~~move mocks to test files~~ *Done 2026-08-17* (six unused mockery files deleted;
    `MockChunker` inlined as a test-local double; five more dead mockery files removed from
    `index/`, `reasoning/`, `graph/`, `fuse/` along with their mock-self-tests);
-   ~~raise `store`/`llm`/`distributed` coverage~~ ✅ *Done 2026-08-17* — **all 14 packages
+ ~~raise `store`/`llm`/`distributed` coverage~~ *Done 2026-08-17* — **all 14 packages
    now above the 80% target** (`llm` 40.2→86.8 via httptest backend suites,
    `distributed` 57.5→90.9, `reasoning` 74.9→96.4, `index` 75.5→95.5);
-   ~~decide multi-namespace~~ ✅ *Decided 2026-08-17, implemented 2026-08-18*
+ ~~decide multi-namespace~~ *Decided 2026-08-17, implemented 2026-08-18*
    (README corrected; `Document.Namespace` per-document routing — `96a3446`).
    **Housekeeping complete.**
 
 ---
 
-## ✅ Done — summary of the fix pass (2026-07-18 → 2026-08-18)
+## Done — summary of the fix pass (2026-07-18 → 2026-08-18)
 
 All seven critical bugs, all actionable medium issues, all housekeeping items, and
 all three previously-deferred still-open items are closed. Commit map

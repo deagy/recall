@@ -698,7 +698,7 @@ The full development roadmap is documented in [ROADMAP.md](./ROADMAP.md). Curren
 | | 24 | Feedback loop & evaluation framework (NDCG, relevance feedback) | |
 | **4 — Ecosystem** | 27 | REST API & service layer (Docker, K8s) | ~12 weeks |
 | | 28 | Security (auth, RBAC, encryption, audit logging) | |
-| | 29 | ~~CLI tool~~ ✅ (`recall search`, `recall upload`, etc.) | |
+| | 29 | ~~CLI tool~~ (`recall search`, `recall upload`, etc.) | |
 | | 30–32 | Web UI, SDK wrappers (Python/TypeScript), project hygiene | |
 
 **Total estimated effort: ~36–38 weeks for full roadmap.**
@@ -706,7 +706,7 @@ The full development roadmap is documented in [ROADMAP.md](./ROADMAP.md). Curren
 ### Quick Wins
 1. **Test coverage hardening** — `llm/` at 40.2%, `store/` at 49.9% need immediate attention
 2. **Project hygiene** — CHANGELOG, CONTRIBUTING, CI/CD, golangci-lint
-3. ~~**CLI tool**~~ — ✅ done (`cmd/recall`, see [Command-Line Interface](#command-line-interface-cli))
+3. ~~**CLI tool**~~ — done (`cmd/recall`, see [Command-Line Interface](#command-line-interface-cli))
 
 ### Current Coverage Gaps
 

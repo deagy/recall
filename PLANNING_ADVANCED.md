@@ -42,9 +42,9 @@ type ParsedQuery struct {
 - Query rewriting based on retrieval feedback
 
 #### 13.4 Adaptive Retrieval Strategies
-- **Relevance feedback loop**: Learn from user corrections
-- **Query-specific topK**: Adjust retrieval count based on query complexity
-- **Fallback strategies**: When vector search fails, try keyword or graph traversal
+Learn from user corrections, vary `topK` with query complexity rather than
+fixing it, and fall back to keyword or graph traversal when vector search
+returns nothing useful.
 
 ### Implementation Plan
 
@@ -317,7 +317,7 @@ type StreamingChunker interface {
 
 ## Phase 17: Graph Embeddings & Link Prediction
 
-**Goal:** Leverage graph structure for link prediction, entity recommendation, and enhanced retrieval.
+**Goal:** Use the graph's structure for link prediction, entity recommendation, and to widen a retrieval beyond what vector similarity alone returns.
 
 ### Features
 
@@ -510,9 +510,9 @@ type MultiLevelCache struct {
 
 ## Dependencies & Prerequisites
 
-- **Phase 13**: Requires Phase 11 (NER) and Phase 10 (Reasoning)
-- **Phase 14**: Requires Phase 13 (for query parsing) and Phase 11 (NER)
-- **Phase 15**: Requires Phase 5 (SQLite) and Phase 6 (HNSW)
+Phase 13 requires Phase 11 (NER) and Phase 10 (Reasoning); Phase 14 requires
+Phase 13 for query parsing, and Phase 11; Phase 15 requires Phase 5 (SQLite)
+and Phase 6 (HNSW).
 - **Phase 16**: Requires Phase 1 (Chunking) and Phase 2 (Embeddings)
 - **Phase 17**: Requires Phase 8 (Graph) and Phase 14 (LLM for embeddings)
 - **Phase 18**: Requires all previous phases
@@ -539,7 +539,7 @@ type MultiLevelCache struct {
 | LLM API costs | High | Caching, rate limiting, local fallback |
 | Graph embedding training time | Medium | Sampling, incremental training |
 | Distributed complexity | High | Start with sharding only, add replication later |
-| Cache invalidation bugs | Medium | Comprehensive testing, monitoring |
+| Cache invalidation bugs | Medium | Tests that exercise eviction under concurrent writes; cache-hit metrics |
 | Semantic chunking overhead | Low | Benchmark, optimize similarity computation |
 
 ---

@@ -8,8 +8,8 @@ the most recent tagged release only.
 
 | Version | Supported          |
 | ------- | ------------------ |
-| latest tag on `main` | ✅ security fixes |
-| older tags | ❌ upgrade to the latest release |
+| latest tag on `main` | security fixes |
+| older tags | upgrade to the latest release |
 
 After 1.0, this policy will be revisited to cover at least the latest minor
 release line.

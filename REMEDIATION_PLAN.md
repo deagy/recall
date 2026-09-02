@@ -4,15 +4,15 @@
 > Companion docs: [REVIEW.md](./REVIEW.md) (2026-07-18 review), [ROADMAP.md](./ROADMAP.md)
 > Conventions: follow [.clinerules](./.clinerules) — gofmt/go vet/go test gates, conventional commits, README/PLANNING updates at phase completion.
 
-Review baseline (2026-08-19): `go build` ✅ · `go vet` ✅ · `go test ./... -count=1` ✅ (35 packages) ·
-`-race` on store/index/cache/distributed/graph/ingest/query/pipeline/tracing/llm ✅ (existing tests do **not** exercise the racy paths below) · `gofmt -l` ✅ clean.
+Review baseline (2026-08-19): `go build` passes · `go vet` passes · `go test ./... -count=1` passes (35 packages) ·
+`-race` passes on store/index/cache/distributed/graph/ingest/query/pipeline/tracing/llm (existing tests do **not** exercise the racy paths below) · `gofmt -l` clean.
 
-**Legend:** 🔴 P0 crash/data-loss class · 🟠 P1 silent correctness bug · 🟡 P2 semantics/consistency · ⚪ P3 smell/cleanup.
+**Legend:** P0 crash/data-loss class · P1 silent correctness bug · P2 semantics/consistency · P3 smell/cleanup.
 Sizes: S ≤ 1h · M ≤ half day · L > half day.
 
 ---
 
-## Phase 1 — Data races (P0) 🔴
+## Phase 1 — Data races (P0)
 
 **Status: complete (2026-08-21)** — 1.1 + 1.2 in `ebd2221` (both are the same defect class, S-sized, low-risk). Validation: full repo `go test ./... -count=1` green (32/32 packages); `-race` green for `ingest` (full package) and `store` (all 168 tests, run in chunks; the pre-existing heavyweight `TestSQLiteStore_ConcurrentUploadAndSearch` exceeds the sandbox's 30s race budget and is covered by CI's unlimited `go test -race`); `go vet ./...` and `gofmt -l .` clean; coverage store 85.3% / ingest 92.3%.
 
@@ -44,7 +44,7 @@ go vet ./... && gofmt -l .
 
 ---
 
-## Phase 2 — Core correctness bugs (P1) 🟠
+## Phase 2 — Core correctness bugs (P1)
 
 **Status: complete (2026-08-19)** — 2.1 `561bf44` · 2.2 `3db8bd4` · 2.3 `77686b9` · 2.4 `4ab47c2` · 2.5 `a4e187b` · docs `0296f1f`. Validation: `go test ./bm25/... ./store/... ./index/... -count=1` green, `-race` green, full repo suite green; coverage bm25 95.8% / store 85.3% / index 91.9%. Note: 2.2 left `DeleteDocument` iterating the live `docChunks[docID]` map — the 1.1 snapshot fix must preserve the new not-found/pruning behavior.
 
@@ -98,7 +98,7 @@ go test ./store/... -race -count=1
 
 ---
 
-## Phase 3 — Distributed package (P1/P2) 🟠🟡
+## Phase 3 — Distributed package (P1/P2)
 
 **Status: complete (2026-08-21)** — 3.1+3.2 `8eaa478` · 3.3 `49ffbf8` · 3.4 `92f7b81`. Validation: `go test ./... -count=1` and `CGO_ENABLED=1 go test ./distributed/ -race -count=1` green, including a new concurrent snapshot/write race test. The hybrid signature changes (in-development `distributed` package) are tracked as **Breaking** in CHANGELOG `[Unreleased]` and `docs/MIGRATION.md`.
 
@@ -145,7 +145,7 @@ go test ./distributed/... -race -count=1
 
 ---
 
-## Phase 4 — Reasoning & search semantics (P2) 🟡
+## Phase 4 — Reasoning & search semantics (P2)
 
 **Status: complete (2026-08-21)** — 4.1 `8ce60fe` · 4.2 `42b9a85` · 4.3 `a5e5184` · 4.4 `f4e73f3`. Validation: `go test ./reasoning/... ./fuse/... ./chunker/... -count=1` green plus downstream consumers (`pipeline`, `ingest`, `app`, `api`) green; `go vet ./...` and `gofmt -l .` clean. Behavioral changes (reasoning now filters at `MinConfidence`, chunk boundaries shift) are noted in CHANGELOG `[Unreleased]` and `docs/MIGRATION.md` for the next release.
 
@@ -185,7 +185,7 @@ go test ./reasoning/... ./fuse/... ./chunker/... -count=1
 
 ---
 
-## Phase 5 — Code smells & hardening (P3) ⚪
+## Phase 5 — Code smells & hardening (P3)
 
 One commit (`refactor:` / `chore:`) per group; each item is independently reviewable.
 
