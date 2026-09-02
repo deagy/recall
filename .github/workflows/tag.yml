@@ -1,8 +1,14 @@
 # Automated semantic-version tagging.
 #
 # Triggered manually (Actions -> "Tag release" -> Run workflow). Computes the
-# next vX.Y.Z from the latest existing tag based on the requested bump and
-# pushes an annotated tag, which in turn triggers release.yml.
+# next vX.Y.Z from the latest existing tag based on the requested bump, pushes
+# an annotated tag, and then calls release.yml directly.
+#
+# It calls rather than relies on the tag push, because the tag push does not
+# reach release.yml: a ref pushed with the workflow's own GITHUB_TOKEN raises
+# no further workflow_run. This file used to end by echoing "release workflow
+# will pick it up", which was the one thing that did not happen -- v0.3.0 and
+# v0.3.1 were both tagged and neither published anything.
 name: Tag release
 
 on:
@@ -23,6 +29,8 @@ permissions:
 jobs:
   tag:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.next.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -54,4 +62,13 @@ jobs:
           git tag -a "${{ steps.next.outputs.version }}" \
             -m "Release ${{ steps.next.outputs.version }}"
           git push origin "${{ steps.next.outputs.version }}"
-          echo "pushed tag ${{ steps.next.outputs.version }} (release workflow will pick it up)"
+          echo "pushed tag ${{ steps.next.outputs.version }}"
+
+  # Calling release.yml is what actually publishes. See the note at the top.
+  release:
+    needs: tag
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.tag.outputs.version }}

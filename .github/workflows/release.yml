@@ -2,14 +2,34 @@
 # supported platforms and publishes a GitHub release with auto-generated
 # notes (grouped from conventional commit messages since the last tag).
 #
-# Triggered when a semantic version tag (vX.Y.Z) is pushed — usually by the
-# automated tag.yml workflow.
+# Three ways in, and the second one exists because the first silently did
+# not cover the automated path. A tag pushed by a workflow using the
+# repository's own GITHUB_TOKEN does not trigger further workflows, so
+# tag.yml reported success, the tag appeared, and nothing published --
+# for v0.3.0 and v0.3.1 both. v0.2.0 has a release only because that tag
+# was pushed by hand.
+#
+#   push of a vX.Y.Z tag   a tag pushed by a person
+#   workflow_call          tag.yml, immediately after it pushes the tag
+#   workflow_dispatch      recovery: publish for a tag that already exists
 name: Release
 
 on:
   push:
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
+  workflow_call:
+    inputs:
+      tag:
+        description: "The tag to publish a release for"
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to publish a release for (e.g. v0.3.1)"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -17,10 +37,25 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      # One name for the tag whichever trigger fired. github.ref_name is the
+      # tag only on the push trigger; on the other two it is the branch the
+      # caller ran from, which would publish a release named `main`.
+      TAG: ${{ inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.tag || github.ref_name }}
           fetch-depth: 0 # release notes need the commit range since the last tag
+
+      - name: The ref must be a release tag
+        run: |
+          set -euo pipefail
+          case "$TAG" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "refusing to release from '$TAG': not a vX.Y.Z tag" >&2; exit 1 ;;
+          esac
+          git rev-parse --verify "refs/tags/$TAG" >/dev/null
 
       - name: Set up Go
         uses: actions/setup-go@v4
@@ -33,7 +68,7 @@ jobs:
           go test ./... -count=1
 
       - name: Build release binaries
-        run: ./scripts/release-build.sh "$GITHUB_REF_NAME"
+        run: ./scripts/release-build.sh "$TAG"
 
       - name: Create GitHub release
         env:
@@ -42,8 +77,8 @@ jobs:
           # Idempotent: if a release for this tag already exists (e.g. the
           # tag was force-moved onto a fixed commit), replace its assets
           # and notes. The tag itself is left untouched.
-          gh release delete "$GITHUB_REF_NAME" --yes 2>/dev/null || true
-          gh release create "$GITHUB_REF_NAME" \
-            --title "$GITHUB_REF_NAME" \
+          gh release delete "$TAG" --yes 2>/dev/null || true
+          gh release create "$TAG" \
+            --title "$TAG" \
             --generate-notes \
             dist/*
