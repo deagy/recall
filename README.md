@@ -2,6 +2,43 @@
 
 A Go library for building Retrieval-Augmented Generation (RAG) applications. Recall provides structured storage, embedding-based similarity search, metadata filtering, document chunking, persistent SQLite storage, HNSW ANN indexing, and RAG pipeline context assembly — all with zero CGO required.
 
+## Install
+
+Recall is two things: a Go library you import, and two binaries you can run.
+
+**As a library**, in a project with a Go toolchain matching `go.mod` (1.26.5 at
+the time of writing — the toolchain directive will fetch it if yours is older):
+
+```sh
+go get github.com/deagy/recall
+```
+
+**As a command**, take a prebuilt binary from
+[the latest release](https://github.com/deagy/recall/releases/latest) — linux,
+darwin and windows, amd64 and arm64 — and verify it against that release's
+`checksums-sha256.txt`. No Go toolchain needed:
+
+```sh
+version=0.3.3; os=linux; arch=arm64
+base="https://github.com/deagy/recall/releases/download/v$version"
+curl -fsSLO "$base/recall-$version-$os-$arch"
+curl -fsSL  "$base/checksums-sha256.txt" | sha256sum --check --ignore-missing
+chmod +x "recall-$version-$os-$arch" && ./"recall-$version-$os-$arch" --help
+```
+
+Each release ships two binaries: `recall`, the CLI, and `recall-server`, which
+serves the same store over HTTP with API-key, namespace-scoped or JWT
+authentication. Point the CLI at one with `recall --server <url>`; a few
+subcommands are local-only and say so when you try.
+
+To build from a checkout instead — this is the only path that needs Go:
+
+```sh
+git clone https://github.com/deagy/recall.git && cd recall
+go build -o bin/recall ./cmd/recall
+go build -o bin/recall-server ./cmd/recall-server
+```
+
 ## Features
 
 - **Document Chunking** — Pluggable chunking strategies (fixed-size, recursive paragraph/sentence splitting)
