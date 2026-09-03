@@ -937,10 +937,7 @@ engine.AddRule(reasoning.NewTransitiveRule())
 engine.AddRule(reasoning.NewSymmetricRule())
 
 // Explore paths
-paths, err := engine.ExplorePaths(g, "alice", "bob", 3)
-if err != nil {
-    log.Fatal(err)
-}
+paths := engine.ExplorePaths("alice", "bob")
 
 for _, path := range paths {
     fmt.Printf("Path: %s (confidence: %.2f)\n", path.String(), path.Confidence)
@@ -995,7 +992,7 @@ g := graph.NewKnowledgeGraph()
 g.AddEntity(graph.NewEntity("alice", "Alice", graph.EntityPerson))
 g.AddEntity(graph.NewEntity("bob", "Bob", graph.EntityPerson))
 g.AddEntity(graph.NewEntity("go", "Go", graph.EntityConcept))
-g.AddEntity(graph.NewEntity("google", "Google", graph.EntityOrganization))
+g.AddEntity(graph.NewEntity("google", "Google", graph.EntityOrganizer))
 
 // Add relations
 g.AddRelation(graph.NewRelation("alice", "bob", "knows", 0.9))
