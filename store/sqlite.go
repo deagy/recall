@@ -47,7 +47,7 @@ func NewSQLiteStore(cfg Config, dbPath string) (*SQLiteStore, error) {
 		cfg.ChunkerFactory = chunker.NewFixed
 	}
 
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := sql.Open("sqlite", sqliteDSN(dbPath))
 	if err != nil {
 		return nil, fmt.Errorf("opening database: %w", err)
 	}
@@ -56,13 +56,10 @@ func NewSQLiteStore(cfg Config, dbPath string) (*SQLiteStore, error) {
 	// pooled connection is a separate database, so the schema created on one
 	// connection would be invisible to the others. A single serialized
 	// connection is also the safe pattern for embedded SQLite writers.
+	//
+	// It says nothing about a second *process* on the same file, which is what
+	// a shared store is. That is what the busy timeout in the DSN is for.
 	db.SetMaxOpenConns(1)
-
-	// Enable WAL mode for better concurrency
-	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("enabling WAL: %w", err)
-	}
 
 	s := &SQLiteStore{
 		config:   cfg,
@@ -191,42 +188,56 @@ func (s *SQLiteStore) Upload(ctx context.Context, doc *core.Document, content st
 	}
 	stampChunkNamespace(chunks, ns)
 
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("beginning transaction: %w", err)
-	}
-	defer tx.Rollback()
+	// Retried, because busy_timeout does not cover this. SQLite applies the
+	// timeout while acquiring a lock, and not to a lock *upgrade* inside an
+	// open transaction: a second writer that has already begun gets
+	// SQLITE_BUSY immediately when it first writes, however long the timeout
+	// is. cadre's staged store carries the same retry for the same reason.
+	//
+	// The whole transaction is retried rather than the statement, because a
+	// transaction that failed to upgrade is finished -- retrying one insert
+	// inside it would run against a transaction SQLite has already rolled
+	// back.
+	// Retried as a whole, because the contention is not where a first reading
+	// suggests. BeginTx succeeds: SQLite defers the write lock until the
+	// first write, so a second writer gets SQLITE_BUSY on its opening INSERT,
+	// inside a transaction that is then dead. Retrying the begin cannot help,
+	// and retrying one statement runs against a transaction SQLite has
+	// already rolled back -- the unit of retry has to be the transaction.
+	//
+	// busy_timeout does not cover this either. It applies while acquiring a
+	// lock and not to the upgrade of one already held, which is why the DSN
+	// change alone left this failing under load and passing in isolation.
+	if err := s.withBusyRetry(ctx, func(tx *sql.Tx) error {
+		// RFC3339 UTC. A bare "Z" in a layout string is a literal, not a
+		// timezone token, so formatting local time with
+		// "2006-01-02T15:04:05Z" would stamp local time with a fake UTC
+		// marker.
+		now := time.Now().UTC().Format(time.RFC3339)
+		for _, chunk := range chunks {
+			metaJSON, err := serializeMetadata(chunk.Metadata)
+			if err != nil {
+				return fmt.Errorf("serializing metadata: %w", err)
+			}
 
-	// RFC3339 UTC. A bare "Z" in a layout string is a literal, not a
-	// timezone token, so formatting local time with "2006-01-02T15:04:05Z"
-	// would stamp local time with a fake UTC marker.
-	now := time.Now().UTC().Format(time.RFC3339)
-	for _, chunk := range chunks {
-		metaJSON, err := serializeMetadata(chunk.Metadata)
-		if err != nil {
-			return fmt.Errorf("serializing metadata: %w", err)
-		}
-
-		_, err = tx.ExecContext(ctx,
-			`INSERT OR REPLACE INTO chunks (id, content, document_ref, chunk_index, namespace, metadata, created_at, updated_at)
+			if _, err := tx.ExecContext(ctx,
+				`INSERT OR REPLACE INTO chunks (id, content, document_ref, chunk_index, namespace, metadata, created_at, updated_at)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			chunk.ID, chunk.Content, chunk.DocumentRef, chunk.ChunkIndex,
-			ns, metaJSON, now, now)
-		if err != nil {
-			return fmt.Errorf("inserting chunk: %w", err)
-		}
+				chunk.ID, chunk.Content, chunk.DocumentRef, chunk.ChunkIndex,
+				ns, metaJSON, now, now); err != nil {
+				return fmt.Errorf("inserting chunk: %w", err)
+			}
 
-		embBytes := packEmbedding(chunk.Embedding)
-		_, err = tx.ExecContext(ctx,
-			`INSERT OR REPLACE INTO embeddings (chunk_id, namespace, embedding) VALUES (?, ?, ?)`,
-			chunk.ID, ns, embBytes)
-		if err != nil {
-			return fmt.Errorf("inserting embedding: %w", err)
+			embBytes := packEmbedding(chunk.Embedding)
+			if _, err := tx.ExecContext(ctx,
+				`INSERT OR REPLACE INTO embeddings (chunk_id, namespace, embedding) VALUES (?, ?, ?)`,
+				chunk.ID, ns, embBytes); err != nil {
+				return fmt.Errorf("inserting embedding: %w", err)
+			}
 		}
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("committing transaction: %w", err)
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	// Update in-memory copy for HNSW under the store lock so concurrent
@@ -830,4 +841,95 @@ func sortResultsByScore(results []index.SearchResult) {
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].Score > results[j].Score
 	})
+}
+
+// sqliteBusyTimeout is how long a writer waits for a contended lock before
+// giving up.
+//
+// Five seconds, matching cadre's staged store, which reached the number the
+// same way: long enough that an ordinary write behind another ordinary write
+// succeeds, short enough that a genuinely stuck database is reported rather
+// than hung on.
+const sqliteBusyTimeout = 5000
+
+// sqliteDSN builds the connection string, pragmas included.
+//
+// The pragmas belong here rather than in a db.Exec after opening, and the
+// difference is not stylistic. database/sql hands out pooled connections; a
+// PRAGMA run through Exec configures whichever connection served that
+// statement and no other. cadre's staged store learned this the hard way --
+// its comment records that "a busy_timeout set that way is absent on the next
+// connection… two concurrent writers failed with 'database is locked'" -- and
+// this store still had the older shape, with no busy timeout at all.
+//
+// Without one, SQLite returns SQLITE_BUSY the instant a lock is contended
+// instead of waiting. One operator never notices. Two do.
+func sqliteDSN(path string) string {
+	if path == ":memory:" || strings.HasPrefix(path, "file:") {
+		return path
+	}
+	return fmt.Sprintf("file:%s?_pragma=busy_timeout(%d)&_pragma=journal_mode(WAL)",
+		path, sqliteBusyTimeout)
+}
+
+// isLockedError reports whether an error is SQLite refusing on contention.
+//
+// Matched on the message because modernc.org/sqlite does not export a typed
+// busy error, and both spellings appear: "database is locked" from the C
+// heritage and SQLITE_BUSY from the driver's own code path.
+func isLockedError(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := err.Error()
+	return strings.Contains(text, "database is locked") || strings.Contains(text, "SQLITE_BUSY")
+}
+
+// withBusyRetry runs one transaction, retrying the whole thing on contention.
+//
+// The callback may run more than once, so it must not carry state between
+// attempts. Everything it does here is idempotent -- INSERT OR REPLACE keyed
+// by chunk id -- which is what makes retrying safe rather than merely
+// convenient.
+func (s *SQLiteStore) withBusyRetry(ctx context.Context, body func(*sql.Tx) error) error {
+	deadline := time.Now().Add(time.Duration(sqliteBusyTimeout) * time.Millisecond)
+	delay := 5 * time.Millisecond
+	for attempt := 1; ; attempt++ {
+		err := s.runOnce(ctx, body)
+		if err == nil {
+			return nil
+		}
+		if !isLockedError(err) || time.Now().After(deadline) {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(delay):
+		}
+		if delay < 200*time.Millisecond {
+			delay *= 2
+		}
+	}
+}
+
+// runOnce is one attempt: begin, run, commit, and roll back on any failure.
+//
+// Separate so the rollback is scoped to the attempt rather than the retry
+// loop. A deferred rollback inside the loop would accumulate one per attempt
+// and only fire when the whole function returned.
+func (s *SQLiteStore) runOnce(ctx context.Context, body func(*sql.Tx) error) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("beginning transaction: %w", err)
+	}
+	if err := body(tx); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("committing transaction: %w", err)
+	}
+	return nil
 }
