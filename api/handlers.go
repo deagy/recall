@@ -79,6 +79,7 @@ func (s *Server) buildHandler() http.Handler {
 	mux.HandleFunc("POST /rag", s.handleRAG)
 	mux.HandleFunc("GET /graph/{entity}", s.handleGraphEntity)
 	mux.HandleFunc("POST /graph/reason", s.handleGraphReason)
+	mux.HandleFunc("GET /whoami", s.handleWhoami)
 
 	var h http.Handler = mux
 
@@ -665,4 +666,32 @@ func toEntityDTO(e *graph.Entity) entityDTO {
 		Properties:   e.Properties,
 		SourceChunks: e.SourceChunks,
 	}
+}
+
+// handleWhoami reports the subject this request authenticated as.
+//
+// The server has always known it -- RequireAuth resolves it and puts it in the
+// request context -- and never told the caller. That gap is why a client can
+// hold a credential and still be unable to record who it is: it knows what it
+// sent, not what the server decided that meant, and those are different
+// claims. Only the second is worth writing into an audit trail.
+//
+// Deliberately behind the same authentication as the data endpoints. An
+// unauthenticated caller has no subject to report, and answering them at all
+// would turn this into an oracle for which key names which person.
+func (s *Server) handleWhoami(w http.ResponseWriter, r *http.Request) {
+	subject := Subject(r)
+	if subject == "" {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"authenticated": false,
+			"detail": "this server has no authenticator configured, so it vouches for nobody; " +
+				"a caller's asserted identity here is not verified by anything",
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"authenticated": true,
+		"subject":       subject,
+		"namespaces":    RequestNamespaces(r),
+	})
 }
