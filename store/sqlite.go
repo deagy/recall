@@ -652,6 +652,23 @@ func (s *SQLiteStore) DeleteDocument(ctx context.Context, docID string) error {
 }
 
 // Count returns the total number of chunks across all namespaces.
+// DocumentChunkCount reports how many chunks the store holds for a document.
+//
+// Added because deletion had no way to be checked. DeleteDocument keys on
+// document_ref and nothing exposed that column, so a caller could delete and
+// then only confirm the call returned nil -- which is exactly the shape a
+// delete that silently does nothing takes. Zero here is the difference
+// between "it is gone" and "the call did not error".
+func (s *SQLiteStore) DocumentChunkCount(ctx context.Context, docID string) (int, error) {
+	var count int
+	err := s.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM chunks WHERE document_ref = ?`, docID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("counting chunks for %q: %w", docID, err)
+	}
+	return count, nil
+}
+
 func (s *SQLiteStore) Count() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
