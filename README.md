@@ -4,6 +4,16 @@ A Go library for building Retrieval-Augmented Generation (RAG) applications. Rec
 
 ## Install
 
+Recall stands alone, and is also the storage engine behind
+[cadre](https://github.com/deagy/cadre)'s knowledge store — see
+[cadre, the kernel, and recall](https://github.com/deagy/cadre/blob/main/docs/the-three-repositories.md)
+if you arrived from there.
+
+Fuller references live beside the code: [`cmd/recall/README.md`](cmd/recall/README.md)
+for every CLI flag, and [`embedder/README.md`](embedder/README.md) for wiring a
+real embedding provider — which the examples below deliberately do not do, since
+they use `MockEmbedder` to stay runnable.
+
 Recall is two things: a Go library you import, and two binaries you can run.
 
 **As a library**, in a project with a Go toolchain matching `go.mod` (1.26.5 at
@@ -49,6 +59,7 @@ go build -o bin/recall-server ./cmd/recall-server
 - **SQLite Persistence** — Persistent storage with `modernc.org/sqlite` (pure Go, no CGO)
 - **HNSW ANN Index** — Approximate nearest neighbor search for large collections (automatic brute-force below the activation threshold)
 - **RAG Pipeline** — Context assembly, prompt templating, token management
+- **Fail-closed retrieval** — `govern/` wraps a store so a search with no filters is refused rather than spanning every namespace. Permissive search is right for a library and wrong for a system where retrieval must be scoped; this is the wrapper for the second case
 - **Knowledge Graph** — Entity/relation extraction, graph traversal (BFS/DFS), transitive closure, path finding, common-neighbor inference
 - **Multi-hop Reasoning** — Pluggable inference rules (transitive, symmetric, anti-symmetric), depth-limited path exploration, confidence propagation, natural language query → graph reasoning
 - **Namespaces** — Isolated knowledge spaces (one store instance per namespace; a document can override the store's namespace via `core.Document.Namespace`; search spans all namespaces in a store)
@@ -916,12 +927,10 @@ import (
 )
 
 // Create reasoning engine
-engine := reasoning.NewEngine(
-    reasoning.Config{
-        MaxDepth: 5,
-        MinConfidence: 0.5,
-    },
-)
+engine := reasoning.NewEngine(g, reasoning.Config{
+    MaxDepth:      5,
+    MinConfidence: 0.5,
+})
 
 // Add inference rules
 engine.AddRule(reasoning.NewTransitiveRule())
