@@ -903,7 +903,8 @@ g.AddEntity(graph.NewEntity("go", "Go", graph.EntityConcept))
 g.AddRelation(graph.NewRelation("alice", "go", "uses", 0.9))
 g.AddRelation(graph.NewRelation("bob", "go", "uses", 0.8))
 
-// Find paths	path := g.FindPath("alice", "bob")
+// Find paths
+path := g.FindPath("alice", "bob")
 if path != nil {
     fmt.Printf("Path: %s\n", path.String())
 }
@@ -911,7 +912,7 @@ if path != nil {
 // Get neighbors
 neighbors := g.Neighbors("alice")
 for _, n := range neighbors {
-    fmt.Printf("Alice knows: %s\n", n.Name)
+    fmt.Printf("Alice knows: %s\n", n.Label)
 }
 
 // Transitive closure
@@ -932,15 +933,16 @@ engine := reasoning.NewEngine(g, reasoning.Config{
     MinConfidence: 0.5,
 })
 
-// Add inference rules
-engine.AddRule(reasoning.NewTransitiveRule())
-engine.AddRule(reasoning.NewSymmetricRule())
-
-// Explore paths
+// Explore paths between two entities
 paths := engine.ExplorePaths("alice", "bob")
-
 for _, path := range paths {
-    fmt.Printf("Path: %s (confidence: %.2f)\n", path.String(), path.Confidence)
+    fmt.Println(path.String())
+}
+
+// Or let the engine infer relations the graph does not state directly
+for _, inferred := range engine.InferRelations() {
+    fmt.Printf("%s --[%s]--> %s (confidence %.2f)\n",
+        inferred.From, inferred.Type, inferred.To, inferred.Confidence)
 }
 ```
 

@@ -551,7 +551,7 @@ there.
 - [x] `CODE_OF_CONDUCT.md` — community standards
 - [x] `ARCHITECTURE.md` — detailed architecture decisions
 - [x] `GOVERNANCE.md` — project governance
-- [x] Per-package README files — 34 of 36 packages. `govern/` and the two `example/` programs have none; `govern/`'s package comment carries its documentation instead.
+- [x] Per-package README files — 33 of 36 packages. `govern/`, `example/e2e/` and `example/production/` have none; `govern/`'s package comment carries its documentation instead.
 - [x] Migration guide for version upgrades (`docs/MIGRATION.md`)
 
 ### 32.2 CI/CD
