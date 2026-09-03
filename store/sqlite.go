@@ -651,7 +651,6 @@ func (s *SQLiteStore) DeleteDocument(ctx context.Context, docID string) error {
 	return nil
 }
 
-// Count returns the total number of chunks across all namespaces.
 // DocumentChunkCount reports how many chunks the store holds for a document.
 //
 // Added because deletion had no way to be checked. DeleteDocument keys on
@@ -669,6 +668,7 @@ func (s *SQLiteStore) DocumentChunkCount(ctx context.Context, docID string) (int
 	return count, nil
 }
 
+// Count returns the total number of chunks across all namespaces.
 func (s *SQLiteStore) Count() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
