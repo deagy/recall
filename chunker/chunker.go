@@ -12,8 +12,16 @@ type Config struct {
 	// Used by fixed-size chunkers.
 	MaxTokens int
 
-	// MinChunkSize is the minimum number of characters for a chunk.
-	// Chunks smaller than this are merged with adjacent chunks.
+	// MinChunkSize is the minimum number of characters for a chunk. A chunk
+	// below it is discarded, never merged: FixedChunker drops one built from a
+	// single part -- a piece that had nothing to combine with -- and
+	// RecursiveChunker drops any piece under the threshold outright.
+	// AdaptiveChunker instead reads it as a lower size bound.
+	//
+	// The distinction matters under a boundary-preserving strategy such as
+	// DocumentAwareChunker, which chunks each section independently: a section
+	// shorter than this yields no chunk at all, and nothing records that it was
+	// there. Set it to 0 to keep every chunk.
 	MinChunkSize int
 
 	// OverlapTokens is the number of tokens to overlap between adjacent chunks.
