@@ -12,6 +12,33 @@ note in [docs/MIGRATION.md](./docs/MIGRATION.md).
 
 ### Added
 
+- `store.conversation_formats`: chat exports are ingested as one document per
+  conversation instead of as generic JSON. A format is a mapping of dot-paths —
+  `conversations`, `turns`, `text`, and optionally `role`, `id`, `title` — and a
+  mapping claims a file when its `turns` and `text` paths resolve on the first
+  conversation. Adding support for an export shape is therefore data, not code;
+  configured formats are tried before the built-ins, so one can override a
+  built-in for a file both would claim. Non-conversation JSON falls through to
+  the existing JSON loader unchanged.
+
+  Turns are joined by `store.chunking.boundary`, so pairing this with
+  `strategy: document_aware` makes each turn its own chunk. The two settings are
+  coupled: a loader boundary that differs from the chunker's leaves the chunker
+  one undifferentiated blob. A turn containing the boundary is escaped before
+  joining, and the default (`"\n␄\n"`, U+2404) avoids `---`, which chat
+  transcripts contain routinely.
+
+  The speaker is prefixed onto each turn's text rather than stored as metadata:
+  one document per conversation means the loader cannot attach per-turn
+  metadata, since chunk metadata comes from the chunker.
+
+  No built-in formats ship yet. A mapping is only correct once written against a
+  real export, and a guessed one would match nothing and fall through silently.
+
+## [0.4.0] — 2026-09-04
+
+### Added
+
 - `store.chunking.strategy` accepts `document_aware`. It splits content on an
   explicit boundary marker and chunks each section independently, so no chunk
   spans two sections and overlap never crosses one. `DocumentAwareChunker` has
