@@ -12,7 +12,7 @@ import (
 
 func TestLoaderForPath(t *testing.T) {
 	dir := t.TempDir()
-	if _, err := loaderForPath(dir, true); err != nil {
+	if _, err := loaderForPath(dir, true, config.StoreConfig{}); err != nil {
 		t.Errorf("directory loader: %v", err)
 	}
 
@@ -20,11 +20,11 @@ func TestLoaderForPath(t *testing.T) {
 	if err := os.WriteFile(txt, []byte("hello"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := loaderForPath(txt, true); err != nil {
+	if _, err := loaderForPath(txt, true, config.StoreConfig{}); err != nil {
 		t.Errorf("file loader: %v", err)
 	}
 
-	if _, err := loaderForPath(filepath.Join(dir, "missing.txt"), true); err == nil {
+	if _, err := loaderForPath(filepath.Join(dir, "missing.txt"), true, config.StoreConfig{}); err == nil {
 		t.Error("missing path: expected error")
 	}
 
@@ -32,7 +32,7 @@ func TestLoaderForPath(t *testing.T) {
 	if err := os.WriteFile(xyz, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := loaderForPath(xyz, true); err == nil {
+	if _, err := loaderForPath(xyz, true, config.StoreConfig{}); err == nil {
 		t.Error("unsupported extension: expected error")
 	}
 }

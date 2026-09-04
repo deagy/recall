@@ -89,7 +89,7 @@ func runUpload(cmd *cobra.Command, o *globalOptions, paths []string, recursive b
 	}
 
 	for _, path := range paths {
-		ld, err := loaderForPath(path, recursive)
+		ld, err := loaderForPath(path, recursive, o.cfg.Store)
 		if err != nil {
 			out.Failed++
 			out.Documents = append(out.Documents, uploadDocResult{Source: path, Status: "failed", Error: err.Error()})

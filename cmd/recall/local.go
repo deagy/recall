@@ -24,14 +24,55 @@ var supportedExtensions = []string{
 	".pdf", ".docx",
 }
 
+// conversationLoader reads chat exports as one document per conversation.
+//
+// It is passed explicitly on both paths below because DirectoryLoader.Loaders
+// does not reach here: this function used to hand that field nil, and single
+// files never touch DirectoryLoader at all. Registering a loader against that
+// hook changes nothing for `recall upload`.
+//
+// The mapping list is where a format is added. A built-in export format is a
+// ConversationMapping literal, the same shape a user supplies for their own.
+func conversationLoader(sc config.StoreConfig) loader.Loader {
+	return &loader.ConversationLoader{
+		Mappings: conversationMappings(sc),
+		// The loader's boundary must be the chunker's, or turn structure is
+		// lost between them.
+		Boundary: sc.Chunking.Boundary,
+	}
+}
+
+// conversationMappings puts user-configured formats ahead of the built-ins, so
+// a mapping in a config file wins for a file both would claim.
+func conversationMappings(sc config.StoreConfig) []loader.ConversationMapping {
+	out := make([]loader.ConversationMapping, 0, len(sc.ConversationFormats))
+	for _, f := range sc.ConversationFormats {
+		out = append(out, loader.ConversationMapping{
+			Name:          f.Name,
+			Conversations: f.Conversations,
+			Turns:         f.Turns,
+			Text:          f.Text,
+			Role:          f.Role,
+			ID:            f.ID,
+			Title:         f.Title,
+		})
+	}
+	return append(out, loader.BuiltinConversationMappings()...)
+}
+
 // loaderForPath returns the loader that reads path (a file or directory).
-func loaderForPath(path string, recursive bool) (loader.Loader, error) {
+func loaderForPath(path string, recursive bool, sc config.StoreConfig) (loader.Loader, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return nil, err
 	}
+	convo := conversationLoader(sc)
 	if info.IsDir() {
-		return loader.NewDirectoryLoader(supportedExtensions, recursive, nil)
+		return loader.NewDirectoryLoader(supportedExtensions, recursive,
+			map[string]loader.Loader{".json": convo})
+	}
+	if strings.EqualFold(filepath.Ext(path), ".json") {
+		return convo, nil
 	}
 	return loader.ForExtension(filepath.Ext(path))
 }

@@ -137,6 +137,12 @@ type StoreConfig struct {
 
 	// Chunking configures document chunking.
 	Chunking ChunkingConfig `json:"chunking" yaml:"chunking"`
+
+	// ConversationFormats describe chat exports that `recall upload` should
+	// read as one document per conversation rather than as generic JSON. They
+	// are tried in order, before the built-in formats, so a user mapping can
+	// override a built-in for a file both would claim.
+	ConversationFormats []ConversationFormat `json:"conversation_formats,omitempty" yaml:"conversation_formats,omitempty"`
 }
 
 // EmbedderConfig configures the embedding provider.
@@ -163,6 +169,34 @@ type EmbedderConfig struct {
 
 	// Path is the local model file for the onnx provider.
 	Path string `json:"path" yaml:"path"`
+}
+
+// ConversationFormat locates conversations and turns inside a chat export.
+// Paths are dot-separated; "chat_messages.text" reaches a nested field.
+//
+// A format is data, not code: adding support for an export shape is a mapping,
+// whether it ships built in or comes from a config file.
+type ConversationFormat struct {
+	// Name identifies the format and is recorded on every document it produces.
+	Name string `json:"name" yaml:"name"`
+
+	// Conversations is the path to the array of conversations. Empty means the
+	// top level is itself the array, or a single conversation object.
+	Conversations string `json:"conversations,omitempty" yaml:"conversations,omitempty"`
+
+	// Turns is the path, within a conversation, to its turns. Required.
+	Turns string `json:"turns" yaml:"turns"`
+
+	// Text is the path, within a turn, to the turn's text. Required.
+	Text string `json:"text" yaml:"text"`
+
+	// Role is the path, within a turn, to the speaker. Optional; when present
+	// each turn is prefixed with it so the speaker survives into the chunk.
+	Role string `json:"role,omitempty" yaml:"role,omitempty"`
+
+	// ID and Title are paths within a conversation. Optional.
+	ID    string `json:"id,omitempty" yaml:"id,omitempty"`
+	Title string `json:"title,omitempty" yaml:"title,omitempty"`
 }
 
 // ChunkingConfig configures document chunking.
