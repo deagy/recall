@@ -82,12 +82,30 @@ func BuildEmbedder(e config.EmbedderConfig) (embedder.Embedder, error) {
 }
 
 // ChunkerFactory maps the configured strategy to a chunker factory.
+//
+// The returned factory ignores the chunker.Config it is handed and builds from
+// the store's own ChunkingConfig. The stores invoke their factory with
+// chunker.DefaultConfig(), so anything read from the caller's argument would
+// discard the configured max_tokens, overlap and min_chunk_size.
 func ChunkerFactory(k config.ChunkingConfig) chunker.Factory {
-	switch k.Strategy {
-	case config.ChunkingRecursive:
-		return chunker.NewRecursive
-	default:
-		return chunker.NewFixed
+	cc := chunker.Config{
+		MaxTokens:     k.MaxTokens,
+		OverlapTokens: k.Overlap,
+		MinChunkSize:  k.MinChunkSize,
+	}
+	return func(chunker.Config) chunker.Chunker {
+		switch k.Strategy {
+		case config.ChunkingRecursive:
+			return chunker.NewRecursive(cc)
+		case config.ChunkingDocumentAware:
+			// The boundary is the intended chunk edge, so the inner chunker
+			// only subdivides sections that exceed MaxTokens.
+			da := chunker.NewDocumentAware(chunker.NewFixed(cc))
+			da.Boundary = k.Boundary
+			return da
+		default:
+			return chunker.NewFixed(cc)
+		}
 	}
 }
 

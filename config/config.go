@@ -38,6 +38,11 @@ const (
 const (
 	ChunkingFixed     = "fixed"
 	ChunkingRecursive = "recursive"
+	// ChunkingDocumentAware splits on an explicit boundary marker first and
+	// chunks each section independently, so no chunk spans two sections. Use
+	// it for content whose sections are the intended retrieval unit -- chat
+	// exports where each turn is a section, for example.
+	ChunkingDocumentAware = "document_aware"
 )
 
 // Duration is a time.Duration that marshals as a string ("30s") in both
@@ -171,6 +176,19 @@ type ChunkingConfig struct {
 	// Overlap is the overlap in tokens between adjacent chunks.
 	// Defaults to 50.
 	Overlap int `json:"overlap" yaml:"overlap"`
+
+	// MinChunkSize is the minimum characters a chunk may have. A chunk below
+	// it that cannot be combined with neighbouring text is discarded, so on a
+	// boundary-split strategy this silently drops whole short sections.
+	// Defaults to 50 for "fixed" and "recursive", and to 0 for
+	// "document_aware", where every section is meant to survive.
+	// Set explicitly to override either default.
+	MinChunkSize int `json:"min_chunk_size" yaml:"min_chunk_size"`
+
+	// Boundary is the section separator for "document_aware". Empty means the
+	// chunker default ("\n---\n"). Choose a marker the content cannot contain:
+	// prose and chat transcripts routinely include "---".
+	Boundary string `json:"boundary" yaml:"boundary"`
 }
 
 // AuthConfig configures API authentication.
@@ -282,6 +300,13 @@ func (c *Config) WithDefaults() {
 	}
 	if st.Chunking.Overlap == 0 {
 		st.Chunking.Overlap = 50
+	}
+	// MinChunkSize has no zero-value default: 0 is a meaningful setting (keep
+	// every chunk). Only fill it in when the field was never mentioned, which
+	// a negative sentinel cannot express -- so document_aware, whose sections
+	// are the retrieval unit, keeps 0 and the size-based strategies get 50.
+	if st.Chunking.MinChunkSize == 0 && st.Chunking.Strategy != ChunkingDocumentAware {
+		st.Chunking.MinChunkSize = 50
 	}
 
 	cl := &c.CLI
@@ -414,11 +439,14 @@ func (c *Config) Validate() error {
 
 	k := st.Chunking
 	switch k.Strategy {
-	case ChunkingFixed, ChunkingRecursive:
+	case ChunkingFixed, ChunkingRecursive, ChunkingDocumentAware:
 	case "":
 		problems = append(problems, "store.chunking.strategy is required")
 	default:
-		problems = append(problems, fmt.Sprintf("store.chunking.strategy %q unknown (want %q or %q)", k.Strategy, ChunkingFixed, ChunkingRecursive))
+		problems = append(problems, fmt.Sprintf("store.chunking.strategy %q unknown (want %q, %q or %q)", k.Strategy, ChunkingFixed, ChunkingRecursive, ChunkingDocumentAware))
+	}
+	if k.MinChunkSize < 0 {
+		problems = append(problems, "store.chunking.min_chunk_size must be >= 0")
 	}
 	if k.MaxTokens <= 0 {
 		problems = append(problems, "store.chunking.max_tokens must be > 0")
