@@ -4,7 +4,7 @@ This guide explains Recall's versioning policy and how to upgrade between
 releases. Per-release breaking changes and their migration steps are recorded
 here as they happen.
 
-> **Status:** Latest release is **v0.2.0** (2026-08-21). Recall is
+> **Status:** Latest release is **v0.3.6**. Recall is
 > pre-1.0: minor releases may contain breaking changes as APIs stabilize;
 > they are always listed here and in the [CHANGELOG](../CHANGELOG.md) with a
 > **Breaking** label.
@@ -67,6 +67,28 @@ Back up first: `recall store backup`.
 ### Next release (unreleased)
 
 **Breaking changes**
+
+- `store.chunking.max_tokens` and `store.chunking.overlap` now take effect.
+  They were read from config, used to select which chunker was built, and then
+  discarded: `store/memory.go` and `store/sqlite.go` invoke the chunker factory
+  with `chunker.DefaultConfig()`, so every store chunked at 512 tokens with 50
+  overlap regardless of what the config said.
+
+  **Who is affected.** Any deployment whose config sets either value to
+  something other than the package defaults. Until now those settings did
+  nothing; from this release they apply.
+
+  **What changes.** Chunk boundaries move, so the embeddings computed for a
+  document change. Retrieval quality may shift in either direction — the
+  configured values are now honoured, which is what was intended, but they have
+  never actually been exercised.
+
+  **What to do.** Before upgrading, check whether your config sets
+  `store.chunking.max_tokens` or `store.chunking.overlap`. If it does not, no
+  action is needed. If it does, decide whether the value you wrote is the one
+  you want, then re-ingest so existing chunks are rebuilt under it — a store
+  ingested before this release holds chunks built at the defaults, and mixing
+  the two granularities in one index is worse than either alone.
 
 The `distributed` package is under active development and its API is not
 frozen; the changes below are tracked here and in the CHANGELOG for

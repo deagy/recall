@@ -10,7 +10,38 @@ note in [docs/MIGRATION.md](./docs/MIGRATION.md).
 
 ## [Unreleased]
 
+### Added
+
+- `store.chunking.strategy` accepts `document_aware`. It splits content on an
+  explicit boundary marker and chunks each section independently, so no chunk
+  spans two sections and overlap never crosses one. `DocumentAwareChunker` has
+  existed and been tested since it was written; nothing could select it, because
+  config validation accepted only `fixed` or `recursive` and `ChunkerFactory`
+  mapped only `recursive`. Intended for content whose sections are the retrieval
+  unit — a chat export whose turns are sections, for example.
+
+- `store.chunking.min_chunk_size` and `store.chunking.boundary`. `min_chunk_size`
+  defaults to 50 for `fixed` and `recursive` and to **0** for `document_aware`,
+  whose sections are the intended retrieval unit. It is deliberately not
+  defaulted by zero-value: 0 means "keep every chunk", which is a real setting.
+  Without this, exposing `document_aware` would have shipped silent data loss —
+  `fixed` discards a single-part chunk below `min_chunk_size`, and each section
+  is chunked independently, so every section shorter than 50 characters would
+  have vanished from the index with no error. `boundary` is exposed because the
+  chunker default is `"\n---\n"` and prose and chat transcripts routinely
+  contain `---`.
+
 ### Fixed
+
+- **Breaking (behavioural).** `store.chunking.max_tokens` and
+  `store.chunking.overlap` now reach the chunker. `BuildStore` passed
+  `ChunkerFactory(sc.Chunking)`, but `store/memory.go` and `store/sqlite.go`
+  invoke that factory with `chunker.DefaultConfig()` — so the configured values
+  selected *which* chunker was built and were then discarded, and every store
+  chunked at the package defaults (512 tokens, 50 overlap) regardless of
+  configuration. A config that set either value has been ignored until now;
+  applying it changes chunk sizes, and therefore embeddings, on the next
+  ingest. See [docs/MIGRATION.md](./docs/MIGRATION.md).
 
 - `govern`: a whitespace-only query is now refused. `Validate` compared the
   query to the empty string exactly, so `"   "` passed, reached the store,
